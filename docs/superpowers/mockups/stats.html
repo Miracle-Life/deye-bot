@@ -1,0 +1,103 @@
+<style>
+  .tg { background:#0e1621; border-radius:14px; padding:18px; font-family:-apple-system,Segoe UI,Roboto,sans-serif; }
+  .bubble { background:#182533; color:#e9eef3; border-radius:12px 12px 12px 4px; padding:10px 14px; max-width:430px; font-size:14px; line-height:1.5; margin-bottom:8px; white-space:pre-line; }
+  .bubble b { color:#fff; }
+  .mono { font-family:ui-monospace,Menlo,monospace; font-size:12.5px; white-space:pre; line-height:1.55; }
+  .time { color:#6d7f8f; font-size:11px; text-align:right; margin-top:2px; }
+  .kb { display:grid; grid-template-columns:1fr 1fr; gap:4px; max-width:458px; }
+  .kb div { background:#22303f; color:#e9eef3; text-align:center; padding:8px; border-radius:8px; font-size:13px; }
+  .note { font-size:12px; color:#8a97a5; margin:6px 0 14px; }
+  .chart { background:#fff; border-radius:8px; padding:10px; }
+  .row { display:flex; align-items:flex-end; gap:10px; height:150px; padding:0 6px; border-bottom:1px solid #ddd; }
+  .col { flex:1; display:flex; flex-direction:column-reverse; }
+  .on { background:#3bb273; } .off { background:#e5534b; }
+  .labels { display:flex; gap:10px; padding:4px 6px 0; font-size:11px; color:#555; }
+  .labels span { flex:1; text-align:center; }
+  .legend { font-size:11px; color:#555; margin-top:6px; }
+  .legend i { display:inline-block; width:10px; height:10px; margin:0 4px 0 10px; vertical-align:middle; }
+</style>
+
+<h2>Статистика по свету — как она может выглядеть в Telegram</h2>
+<p class="subtitle">Цифры выдуманные, для примера. Сверху — дневная сводка (база), ниже — два варианта недельной статистики. Кликни, что нравится.</p>
+
+<div class="section">
+  <h3>1. Дневная сводка (кнопка «📊 Статистика» или автоматически утром за вчера)</h3>
+  <div class="tg">
+    <div class="bubble"><b>📊 Вторник, 3 ноября</b>
+
+💡 Свет был: <b>17 ч 40 мин</b> (74%)
+🌑 Света не было: <b>6 ч 20 мин</b> (26%)
+🔁 Отключений: <b>3</b>
+
+<span class="mono">00    04    08    12    16    20  24
+🟩🟩🟩🟩🟥🟥🟥🟥🟩🟩🟩🟩🟩🟥🟥🟥🟩🟩🟩🟩🟩🟥🟥🟩</span>
+
+• 04:17 – 07:35  (3 ч 18 мин)
+• 13:00 – 15:10  (2 ч 10 мин)
+• 21:48 – 22:40  (52 мин)
+
+🔋 Минимальный заряд: <b>41%</b> (в 07:30)
+⚡ Взято из батарей: <b>4.6 кВт·ч</b><div class="time">09:00</div></div>
+    <div class="kb"><div>◀ Вчера</div><div>Сегодня ▶</div><div>📅 Неделя</div><div>🗓 Месяц</div></div>
+  </div>
+</div>
+
+<h3>2. Неделя — какой вариант?</h3>
+<div class="options">
+  <div class="option" data-choice="week-text" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Текстом (таблица в сообщении)</h3>
+      <div class="tg" style="margin-top:8px">
+        <div class="bubble"><b>📅 Неделя 28 окт – 3 ноя</b>
+<span class="mono">День   Свет     Нет    Откл
+Ср 28  24:00    0:00    0
+Чт 29  20:10    3:50    2
+Пт 30  18:00    6:00    2
+Сб 31  21:30    2:30    1
+Вс 01  24:00    0:00    0
+Пн 02  16:45    7:15    3
+Вт 03  17:40    6:20    3
+──────────────────────────
+Итого 142:05   25:55   11</span>
+💡 Свет был 85% времени
+🌑 Самое долгое: 4 ч 05 мин (Пн, 18:10)</div>
+      </div>
+      <p class="note">+ работает везде, легко читать на телефоне, быстро. − без «картинки» тренд виден хуже.</p>
+    </div>
+  </div>
+
+  <div class="option" data-choice="week-chart" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Картинкой (график + короткий итог)</h3>
+      <div class="tg" style="margin-top:8px">
+        <div class="bubble" style="padding:6px">
+          <div class="chart">
+            <div class="row">
+              <div class="col"><div class="on" style="height:150px"></div></div>
+              <div class="col"><div class="on" style="height:126px"></div><div class="off" style="height:24px"></div></div>
+              <div class="col"><div class="on" style="height:112px"></div><div class="off" style="height:38px"></div></div>
+              <div class="col"><div class="on" style="height:134px"></div><div class="off" style="height:16px"></div></div>
+              <div class="col"><div class="on" style="height:150px"></div></div>
+              <div class="col"><div class="on" style="height:105px"></div><div class="off" style="height:45px"></div></div>
+              <div class="col"><div class="on" style="height:110px"></div><div class="off" style="height:40px"></div></div>
+            </div>
+            <div class="labels"><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span><span>Пн</span><span>Вт</span></div>
+            <div class="legend"><i class="on"></i>Свет был, ч<i class="off"></i>Не было, ч</div>
+          </div>
+          <div style="padding:8px 8px 2px">📅 28 окт – 3 ноя: свет 85%, 11 отключений, всего без света 25 ч 55 мин</div>
+        </div>
+      </div>
+      <p class="note">+ наглядно, сразу видно плохие дни. − это картинка: цифры по дням не скопировать, чуть сложнее в реализации.</p>
+    </div>
+  </div>
+
+  <div class="option" data-choice="week-both" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Оба: картинка + таблица под ней</h3>
+      <p>График сверху для наглядности, текстовая таблица подписью/следующим сообщением для точных цифр.</p>
+    </div>
+  </div>
+</div>

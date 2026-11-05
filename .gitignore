@@ -1,0 +1,12 @@
+node_modules/
+dist/
+data/
+.env
+.superpowers/
+tmp/
+.wrangler/
+.idea/
+.DS_Store
+*.log
+worker/.dev.vars
+CLAUDE.local.md

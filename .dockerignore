@@ -1,0 +1,12 @@
+node_modules
+dist
+data
+tmp
+.env
+.superpowers
+docs
+tests
+scripts
+worker
+.idea
+*.log

@@ -1,0 +1,12 @@
+{
+  "name": "deye-home-watchdog",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "logs": "wrangler tail"
+  },
+  "devDependencies": {
+    "wrangler": "4.157.0"
+  }
+}

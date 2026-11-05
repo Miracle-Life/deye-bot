@@ -1,0 +1,32 @@
+{
+  "name": "deye-bot",
+  "version": "1.0.0",
+  "description": "Telegram bot for Deye hybrid inverters: outage alerts, battery runtime, YASNO outage schedule, spending and battery health.",
+  "author": "Denys Bielov <belovdenys@gmail.com>",
+  "license": "MIT",
+  "scripts": {
+    "test": "vitest run",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "discover": "tsx scripts/discover.ts",
+    "start": "node --expose-gc dist/main.js",
+    "readme-assets": "tsx scripts/readme-assets.ts"
+  },
+  "type": "module",
+  "dependencies": {
+    "@resvg/resvg-js": "2.6.2",
+    "grammy": "1.46.0",
+    "luxon": "3.7.2"
+  },
+  "devDependencies": {
+    "@types/luxon": "3.7.6",
+    "@types/node": "24.19.2",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3",
+    "vitest": "5.1.0"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true
+  },
+  "private": true
+}

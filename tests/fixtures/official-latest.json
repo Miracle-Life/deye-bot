@@ -1,0 +1,100 @@
+{
+  "code": "1000000",
+  "msg": "success",
+  "success": true,
+  "deviceDataList": [
+    {
+      "deviceSn": "0000000000",
+      "deviceType": "INVERTER",
+      "deviceState": 1,
+      "collectionTime": 1793763267,
+      "dataList": [
+        {
+          "key": "TotalSolarPower",
+          "value": "0.00",
+          "unit": "W"
+        },
+        {
+          "key": "GridVoltageL1",
+          "value": "0.00",
+          "unit": "V"
+        },
+        {
+          "key": "GridVoltageL2",
+          "value": "0.00",
+          "unit": "V"
+        },
+        {
+          "key": "GridVoltageL3",
+          "value": "0.00",
+          "unit": "V"
+        },
+        {
+          "key": "GridStatus",
+          "value": "Static",
+          "unit": null
+        },
+        {
+          "key": "TotalGridPower",
+          "value": "0",
+          "unit": "W"
+        },
+        {
+          "key": "LoadPowerL1",
+          "value": "0",
+          "unit": "W"
+        },
+        {
+          "key": "LoadPowerL2",
+          "value": "118",
+          "unit": "W"
+        },
+        {
+          "key": "LoadPowerL3",
+          "value": "954",
+          "unit": "W"
+        },
+        {
+          "key": "TotalConsumptionPower",
+          "value": "1072",
+          "unit": "W"
+        },
+        {
+          "key": "BatteryVoltage",
+          "value": "52.66",
+          "unit": "V"
+        },
+        {
+          "key": "BatteryPower",
+          "value": "1126",
+          "unit": "W"
+        },
+        {
+          "key": "SOC",
+          "value": "69",
+          "unit": "%"
+        },
+        {
+          "key": "BatteryRatedCapacity",
+          "value": "460",
+          "unit": "Ah"
+        },
+        {
+          "key": "Temperature- Battery",
+          "value": "25.00",
+          "unit": "℃"
+        },
+        {
+          "key": "AC Temperature",
+          "value": "41.60",
+          "unit": "℃"
+        },
+        {
+          "key": "UPSLoadPower",
+          "value": "1072",
+          "unit": "W"
+        }
+      ]
+    }
+  ]
+}

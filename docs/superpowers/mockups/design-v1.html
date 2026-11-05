@@ -1,0 +1,157 @@
+<style>
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(370px,1fr)); gap:22px; }
+  .phone { background:#0e1621; border-radius:22px; padding:0 0 14px; font-family:-apple-system,"SF Pro Text",Segoe UI,Roboto,sans-serif; overflow:hidden; border:1px solid #1f2b38; }
+  .bar { background:#17212b; color:#fff; padding:12px 16px; display:flex; align-items:center; gap:10px; font-size:14px; }
+  .ava { width:34px; height:34px; border-radius:50%; background:linear-gradient(135deg,#f5a623,#f76b1c); display:flex; align-items:center; justify-content:center; font-size:17px; }
+  .bar small { display:block; color:#6d8396; font-size:12px; }
+  .chat { padding:12px 12px 0; }
+  .msg { background:#182533; color:#e4ebf1; border-radius:14px 14px 14px 5px; padding:9px 12px 6px; font-size:14.5px; line-height:1.45; max-width:340px; }
+  .msg + .msg { margin-top:8px; }
+  .msg b { color:#fff; font-weight:600; }
+  .msg i { color:#8da2b5; font-style:normal; font-size:12.5px; }
+  .t { color:#6d8396; font-size:11px; text-align:right; margin-top:2px; }
+  .pre { font-family:ui-monospace,Menlo,monospace; font-size:12.5px; background:#0f1923; border-radius:6px; padding:7px 9px; margin:6px 0; white-space:pre; color:#d6e2ec; line-height:1.5; }
+  .quote { border-left:3px solid #4fa3e0; background:rgba(79,163,224,.08); padding:5px 9px; border-radius:0 6px 6px 0; margin:6px 0; }
+  .quote.red { border-color:#e5534b; background:rgba(229,83,75,.09); }
+  .quote.green { border-color:#3bb273; background:rgba(59,178,115,.09); }
+  .quote.amber { border-color:#e3a33b; background:rgba(227,163,59,.09); }
+  .kb { display:grid; gap:4px; max-width:364px; margin-top:4px; }
+  .kb .r { display:grid; gap:4px; }
+  .kb .r2 { grid-template-columns:1fr 1fr; } .kb .r3 { grid-template-columns:1fr 1fr 1fr; } .kb .r1 { grid-template-columns:1fr; }
+  .kb span { background:rgba(40,58,77,.85); color:#e4ebf1; text-align:center; padding:8px 4px; border-radius:9px; font-size:13px; }
+  .kb span.act { background:#2b5278; }
+  .push { background:rgba(242,242,247,.95); color:#111; border-radius:16px; padding:10px 12px; margin:10px 12px 0; font-size:13px; font-family:-apple-system,sans-serif; display:flex; gap:10px; }
+  .push .ic { width:30px; height:30px; border-radius:7px; background:linear-gradient(135deg,#f5a623,#f76b1c); flex:none; display:flex; align-items:center; justify-content:center; }
+  .push b { font-weight:600; } .push small { color:#777; float:right; }
+  .cap { color:#9fb0bf; font-size:13px; margin:10px 4px 0; }
+  .silent { color:#6d8396; font-size:11px; }
+  .principles li { margin:4px 0; }
+</style>
+
+<h2>Дизайн бота «Deye Home» в Telegram — v1</h2>
+<p class="subtitle">Это то, как сообщения реально будут выглядеть (Telegram умеет: жирный, моноширинный блок, цитату-плашку, кнопки под сообщением). Цифры для примера.</p>
+
+<div class="section">
+<h3>Главные принципы удобства</h3>
+<ul class="principles">
+  <li><b>Одна «панель», а не лента сообщений.</b> Кнопки не шлют новые сообщения — они перерисовывают ту же панель. Чат не засоряется.</li>
+  <li><b>Первая строка = суть.</b> В пуше на экране блокировки видно только начало — поэтому там сразу «🔴 Свет пропал · 04:17».</li>
+  <li><b>Громко — только важное.</b> Свет пропал/вернулся и низкий заряд — со звуком. «Нет данных от Deye» — тихо. Статистика — только по кнопке.</li>
+  <li><b>Всегда видно, насколько данные свежие</b> («обновлено 2 мин назад»).</li>
+</ul>
+</div>
+
+<div class="grid">
+
+  <!-- 1. Dashboard -->
+  <div>
+    <div class="phone">
+      <div class="bar"><div class="ava">⚡</div><div>Deye Home<small>бот</small></div></div>
+      <div class="chat">
+        <div class="msg">
+          <b>🔴 Света нет — дом на батареях</b><br>
+          <i>без света уже 1 ч 12 мин · с 04:17</i>
+          <div class="pre">🔋 ▰▰▰▰▰▰▰▱▱▱  72%
+   разряд 274 Вт · хватит ≈ 70 ч
+
+🏠 Потребление      211 Вт
+☀️ Солнце             0 Вт
+🔌 Сеть          нет (0 В)</div>
+          <i>обновлено 2 мин назад</i>
+          <div class="t">05:29</div>
+        </div>
+        <div class="kb">
+          <div class="r r3"><span class="act">🏠 Панель</span><span>🔋 Батарея</span><span>⚡ Нагрузка</span></div>
+          <div class="r r2"><span>📊 Статистика</span><span>🔄 Обновить</span></div>
+        </div>
+      </div>
+    </div>
+    <p class="cap"><b>/start → Панель.</b> Одно сообщение, кнопки переключают вкладки в нём же. Когда свет есть, шапка: <b>🟢 Свет есть</b> и «батарея заряжается +1.2 кВт».</p>
+  </div>
+
+  <!-- 2. Notifications -->
+  <div>
+    <div class="phone">
+      <div class="push"><div class="ic">⚡</div><div><b>Deye Home</b> <small>04:17</small><br>🔴 Свет пропал · 04:17<br><span style="color:#555">Дом на батареях · 🔋 72% · 211 Вт</span></div></div>
+      <div class="chat" style="margin-top:10px">
+        <div class="msg">
+          <b>🔴 Свет пропал · 04:17</b>
+          <div class="quote red">Дом перешёл на батареи<br>🔋 72% · ⚡ 211 Вт · хватит ≈ 70 ч</div>
+          <div class="t">04:20</div>
+        </div>
+        <div class="msg">
+          <b>🪫 Батарея 30%</b>
+          <div class="quote amber">Света нет 9 ч 40 мин<br>При текущих 380 Вт хватит ≈ 13 ч</div>
+          <div class="t">13:57</div>
+        </div>
+        <div class="msg">
+          <b>🟢 Свет вернулся · 15:02</b>
+          <div class="quote green">Не было <b>10 ч 45 мин</b> (04:17 – 15:02)<br>🔋 26% → заряжается</div>
+          <div class="t">15:05</div>
+        </div>
+        <div class="msg" style="opacity:.75">
+          <b>⚠️ Нет данных от Deye 15 мин</b><br>
+          <i>Не значит, что пропал свет — молчит облако/модуль.</i> <span class="silent">🔕 тихо</span>
+          <div class="t">16:20</div>
+        </div>
+      </div>
+    </div>
+    <p class="cap">Уведомления — короткие карточки с цветной плашкой. Пороги батареи (50/30/20/10%) — только пока нет света.</p>
+  </div>
+
+  <!-- 3. Stats day -->
+  <div>
+    <div class="phone">
+      <div class="bar"><div class="ava">⚡</div><div>Deye Home<small>бот</small></div></div>
+      <div class="chat">
+        <div class="msg">
+          <b>📊 Вторник, 3 ноября</b>
+          <div class="pre">💡 Свет был   17 ч 40 мин  74%
+🌑 Не было     6 ч 20 мин  26%
+🔁 Отключений  3
+
+0     6     12    18    24
+🟩🟩🟩🟩🟥🟥🟥🟥🟩🟩🟩🟩🟩🟥🟥🟥🟩🟩🟩🟩🟩🟥🟥🟩</div>
+          <div class="quote">04:17 – 07:35 · 3 ч 18 мин<br>13:00 – 15:10 · 2 ч 10 мин<br>21:48 – 22:40 · 52 мин</div>
+          <i>🔋 мин. заряд 41% · из батарей 4.6 кВт·ч</i>
+          <div class="t">09:12</div>
+        </div>
+        <div class="kb">
+          <div class="r r3"><span>‹ 2 ноя</span><span class="act">День</span><span>4 ноя ›</span></div>
+          <div class="r r3"><span>Неделя</span><span>Месяц</span><span>🏠 Панель</span></div>
+        </div>
+      </div>
+    </div>
+    <p class="cap">Стрелки листают дни, «Неделя/Месяц» переключают период — всё в том же сообщении.</p>
+  </div>
+
+  <!-- 4. Stats week -->
+  <div>
+    <div class="phone">
+      <div class="bar"><div class="ava">⚡</div><div>Deye Home<small>бот</small></div></div>
+      <div class="chat">
+        <div class="msg">
+          <b>📅 28 окт – 3 ноя</b>
+          <div class="pre">     Свет   Нет   Откл
+Ср   24:00  0:00   –
+Чт   20:10  3:50   2
+Пт   18:00  6:00   2
+Сб   21:30  2:30   1
+Вс   24:00  0:00   –
+Пн   16:45  7:15   3  ◂ худший
+Вт   17:40  6:20   3
+───────────────────────
+Σ   142:05 25:55  11</div>
+          <div class="quote">💡 Свет был <b>85%</b> времени<br>🌑 Самое долгое: 4 ч 05 мин (Пн с 18:10)<br>↘ На 2 ч меньше отключений, чем прошлая неделя</div>
+          <div class="t">09:14</div>
+        </div>
+        <div class="kb">
+          <div class="r r3"><span>‹ Пред.</span><span class="act">Неделя</span><span>След. ›</span></div>
+          <div class="r r3"><span>День</span><span>Месяц</span><span>🏠 Панель</span></div>
+        </div>
+      </div>
+    </div>
+    <p class="cap">Месяц — так же, но по неделям + итог (часы без света, число отключений, самый тяжёлый день).</p>
+  </div>
+
+</div>

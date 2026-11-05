@@ -1,0 +1,57 @@
+<style>
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(370px,1fr)); gap:22px; }
+  .phone { background:#0e1621; border-radius:22px; padding:12px 12px 14px; font-family:-apple-system,"SF Pro Text",Segoe UI,Roboto,sans-serif; border:1px solid #1f2b38; }
+  .msg { background:#182533; color:#e4ebf1; border-radius:14px 14px 14px 5px; padding:9px 12px 6px; font-size:14.5px; line-height:1.45; max-width:340px; }
+  .msg + .msg { margin-top:8px; }
+  .msg b { color:#fff; font-weight:600; }
+  .msg i { color:#8da2b5; font-style:normal; font-size:12.5px; }
+  .t { color:#6d8396; font-size:11px; text-align:right; margin-top:2px; }
+  .pre { font-family:ui-monospace,Menlo,monospace; font-size:12.5px; background:#0f1923; border-radius:6px; padding:7px 9px; margin:6px 0; white-space:pre; color:#d6e2ec; line-height:1.5; }
+  .quote { border-left:3px solid #3bb273; background:rgba(59,178,115,.09); padding:5px 9px; border-radius:0 6px 6px 0; margin:6px 0; }
+  .kb { display:grid; gap:4px; max-width:364px; margin-top:4px; grid-template-columns:1fr 1fr 1fr; }
+  .kb span { background:rgba(40,58,77,.85); color:#e4ebf1; text-align:center; padding:8px 4px; border-radius:9px; font-size:13px; }
+  .kb span.act { background:#2b5278; }
+  .new { color:#7fd6a4; }
+  .cap { color:#9fb0bf; font-size:13px; margin:10px 4px 0; }
+</style>
+
+<h2>Добавка: время до полной зарядки</h2>
+<p class="subtitle">Зелёным выделено новое.</p>
+
+<div class="grid">
+  <div>
+    <div class="phone">
+      <div class="msg">
+        <b>🟢 Свет вернулся · 15:02</b>
+        <div class="quote">Не было <b>10 ч 45 мин</b> (04:17 – 15:02)<br>🔋 26% → заряжается <span class="new">+3.2 кВт</span><br><span class="new">⏳ до 100% ≈ <b>5 ч 10 мин</b> (к ~20:10)</span></div>
+        <div class="t">15:05</div>
+      </div>
+      <div class="msg" style="opacity:.8">
+        <b class="new">🔋 Батареи заряжены · 100%</b><br>
+        <i>заряжались 4 ч 55 мин</i> <span style="color:#6d8396;font-size:11px">🔕 тихо</span>
+        <div class="t">19:57</div>
+      </div>
+    </div>
+    <p class="cap">Время считается по текущей мощности заряда. Около 90–100% заряд замедляется, поэтому это оценка («≈»), и бот её уточняет на панели.</p>
+  </div>
+
+  <div>
+    <div class="phone">
+      <div class="msg">
+        <b>🟢 Свет есть · батареи заряжаются</b><br>
+        <i>свет вернулся в 15:02</i>
+        <div class="pre">🔋 ▰▰▰▰▰▱▱▱▱▱  48%
+   заряд +3.2 кВт
+<span class="new">   до 100% ≈ 3 ч 20 мин (к ~20:05)</span>
+
+🏠 Потребление      640 Вт
+☀️ Солнце             0 Вт
+🔌 Сеть       есть (229 В)</div>
+        <i>обновлено 1 мин назад</i>
+        <div class="t">16:44</div>
+      </div>
+      <div class="kb"><span class="act">🏠 Панель</span><span>🔋 Батарея</span><span>⚡ Нагрузка</span></div>
+    </div>
+    <p class="cap">На панели та же оценка обновляется при каждом открытии/«🔄 Обновить».</p>
+  </div>
+</div>

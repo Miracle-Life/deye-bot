@@ -1,0 +1,17 @@
+name = "deye-home-watchdog"
+main = "src/index.ts"
+compatibility_date = "2026-11-01"
+
+# Every 5 minutes: is the bot still checking in?
+[triggers]
+crons = ["*/5 * * * *"]
+
+[vars]
+DOWN_AFTER_MIN = "10"
+
+# Created with: npx wrangler kv namespace create WATCH  → paste the id below
+[[kv_namespaces]]
+binding = "WATCH"
+id = "e11dbfdb8d984a62a86fc9ac169e99b3"
+
+# Secrets (not in this file): npx wrangler secret put TELEGRAM_TOKEN / BEAT_SECRET

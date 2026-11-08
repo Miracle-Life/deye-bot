@@ -1,8 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { batteryV, batteryAlertGate, batteryBands, batteryWatchStep, batteryScaleW, batteryZone, gridChargeW, gridLoad, gridScaleW, gridWatchStep, loadZone, stepGridLoad } from '../src/domain/load.js';
+import { runtimeColor, batteryV, batteryAlertGate, batteryBands, batteryWatchStep, batteryScaleW, batteryZone, gridChargeW, gridLoad, gridScaleW, gridWatchStep, loadZone, stepGridLoad } from '../src/domain/load.js';
 
 describe('gridLoad', () => {
-  it('splits grid draw into house and batteries', () => {
+  it('house = what the inverter measures going to the house; batteries = the rest of the grid draw (with charging losses)', () => {
+    // 17:28 on 2026-11-08: grid 6.04, battery 4.13 (DC), UPS-Load 1.73.
+    expect(gridLoad({ gridPowerW: 6040, batteryPowerW: 4130, upsLoadPowerW: 1730, loadPowerW: 0 })).toEqual({ totalW: 6040, homeW: 1730, batteryW: 4310 });
+    // Not charging: all of it is the house.
+    expect(gridLoad({ gridPowerW: 1420, batteryPowerW: -45, upsLoadPowerW: 1420, loadPowerW: 0 })).toEqual({ totalW: 1420, homeW: 1420, batteryW: 0 });
+  });
+
+  it('the house share never exceeds the grid draw (sun covering the house)', () => {
+    expect(gridLoad({ gridPowerW: 1000, batteryPowerW: 900, upsLoadPowerW: 1500, loadPowerW: 0 })).toEqual({ totalW: 1000, homeW: 1000, batteryW: 0 });
+  });
+
+  it('without a measured house load: grid minus battery (old split)', () => {
     expect(gridLoad({ gridPowerW: 7000, batteryPowerW: 4100 })).toEqual({ totalW: 7000, homeW: 2900, batteryW: 4100 });
   });
 
@@ -136,5 +147,13 @@ describe('batteryV', () => {
     expect(batteryV(null)).toBe(51.2);
     expect(batteryV(-1)).toBe(51.2);
     expect(batteryV(53.1)).toBe(53.1);
+  });
+});
+
+describe('runtimeColor', () => {
+  it('ten steps by hours left, starting at the ring\'s 100 % colour', () => {
+    expect([50, 48, 40, 30, 14, 10, 8, 5, 3, 1.5, 0.5, 0].map(runtimeColor)).toEqual([
+      '#10b981', '#10b981', '#2dcb80', '#4ade80', '#76e25a', '#a3e635', '#ced925', '#facc15', '#f97316', '#ef4444', '#b91c1c', '#b91c1c',
+    ]);
   });
 });

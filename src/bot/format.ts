@@ -56,9 +56,15 @@ export function fmtDuration(ms: number, t: Dict): string {
   return `${m} ${u.min}`;
 }
 
-// Long forecasts don't need minute precision.
+// Long forecasts don't need minute precision: whole hours from 10 h, days + hours from 48 h, "> 7 days" beyond.
 export function fmtApprox(ms: number, t: Dict): string {
-  return ms >= 10 * H ? `${Math.floor(ms / H)} ${t.units.h}` : fmtDuration(ms, t);
+  const u = t.units;
+  if (ms >= 7 * 24 * H) return `> 7 ${u.d}`;
+  if (ms >= 48 * H) {
+    const h = Math.floor(ms / H);
+    return h % 24 ? `${Math.floor(h / 24)} ${u.d} ${h % 24} ${u.h}` : `${h / 24} ${u.d}`;
+  }
+  return ms >= 10 * H ? `${Math.floor(ms / H)} ${u.h}` : fmtDuration(ms, t);
 }
 
 export const fmtTime = (ts: number, zone: string) => DateTime.fromMillis(ts, { zone }).toFormat('HH:mm');

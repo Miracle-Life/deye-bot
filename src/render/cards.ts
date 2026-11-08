@@ -33,6 +33,9 @@ const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replac
 // Rough Inter advance width (em) — good enough for pills and inline units.
 const textW = (s: string, size: number, weight = 600) => s.length * size * (weight >= 700 ? 0.6 : 0.56);
 
+/** Font size for a medium-weight label that must fit `maxW`. */
+const fitLabel = (s: string, maxW: number) => Math.floor((maxW / (s.length * 0.53)) * 10) / 10;
+
 /** Bold font size that keeps `s` within `maxW` (longer units in some languages). */
 export const fitFont = (s: string, maxW: number, base: number) => Math.min(base, Math.floor((maxW / (s.length * 0.6)) * 10) / 10);
 
@@ -202,8 +205,9 @@ export function svgPanel(m: PanelModel): string {
     parts.push(`<text x="${tx}" y="154" font-size="30" font-weight="700" fill="${C.text}">${esc(m.flow.value)}</text>`);
   }
   if (m.eta) {
-    parts.push(`<text x="${tx}" y="196" font-size="14" font-weight="500" fill="${C.muted}">${esc(m.eta.label)}</text>`);
-    parts.push(`<text x="${tx}" y="228" font-size="30" font-weight="700" fill="${TONE[m.eta.tone]}">${esc(m.eta.value)}</text>`);
+    // Labels like "Батареї 36% · при 1.42 кВт вистачить на" can be long: shrink to the card edge.
+    parts.push(`<text x="${tx}" y="196" font-size="${Math.min(14, fitLabel(m.eta.label, CARD_W - 24 - tx))}" font-weight="500" fill="${C.muted}">${esc(m.eta.label)}</text>`);
+    parts.push(`<text x="${tx}" y="228" font-size="30" font-weight="700" fill="${m.eta.color ?? TONE[m.eta.tone]}">${esc(m.eta.value)}</text>`);
   }
 
   const gap = 12;

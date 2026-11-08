@@ -39,6 +39,8 @@ const panels: Record<string, object> = {
   'grid-back': { ...ctx, lastOnTs: now - 5 * MIN, lastOutageStartTs: now - 23 * H - 59 * MIN - 5 * MIN, reading: { ...base, soc: 12, batteryPowerW: 4154, upsLoadPowerW: 4000, gridPowerW: 8154, gridVoltages: [230, 230, 230] } },
   'outage-red': { ...ctx, grid: off, outageStartTs: now - 23 * H - 59 * MIN, reading: { ...base, soc: 7, batteryVoltage: 49.2, batteryPowerW: -8490, upsLoadPowerW: 8490, gridPowerW: 0, gridVoltages: [0, 0, 0] }, schedule: sched },
   'outage-nolimits': { ...ctx, limits: null, grid: off, outageStartTs: now - 17 * MIN, reading: { ...base, soc: 93, batteryPowerW: -1050, upsLoadPowerW: 1000, gridPowerW: 0, gridVoltages: [0, 0, 0] } },
+  'grid-idle-full': { ...ctx, reading: { ...base, soc: 100, batteryPowerW: -45, upsLoadPowerW: 1420, gridPowerW: 1420, gridVoltages: [234, 234, 234] } },
+  'grid-idle-part': { ...ctx, reading: { ...base, soc: 36, batteryPowerW: 30, upsLoadPowerW: 9870, gridPowerW: 9870, gridVoltages: [234, 234, 234] } },
   stale: { ...ctx, reading: { ...base, ts: now - 3 * H, soc: 55, batteryPowerW: -300, upsLoadPowerW: 300, gridPowerW: 0, gridVoltages: [230, 230, 230] } },
 };
 

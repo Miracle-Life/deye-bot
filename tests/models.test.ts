@@ -88,11 +88,29 @@ describe('panelModel', () => {
     expect(m.soc).toBe(69);
     expect(m.socKwh).toBe('16.3 кВт·ч');
     expect(m.flow).toEqual({ label: 'Разряд', value: '1.13 кВт' });
-    expect(m.eta).toEqual({ label: 'Хватит примерно на', value: '12 ч', tone: 'amber' });
+    expect(m.eta).toEqual({ label: 'Хватит примерно на', value: '12 ч', tone: 'amber', color: '#76e25a' });
     expect(m.tiles.find((t) => t.icon === 'grid')).toMatchObject({ value: 'нет', tone: 'red' });
     expect(m.tiles.find((t) => t.icon === 'home')).toMatchObject({ value: '1.07', unit: 'кВт' });
     expect(m.stale).toBeNull();
     expect(m.caption).toBe('🔴 <b>Света нет</b> · с 00:41');
+  });
+
+  it('grid on, batteries idle: house runs from the grid; reserve at this load, coloured by hours', () => {
+    const r = { ...base, ts: now - MIN, soc: 100, batteryPowerW: -45, upsLoadPowerW: 1420, gridPowerW: 1420, batteryCapacityKwh: 23.552, gridVoltages: [234, 234, 234] };
+    const uk = dicts.uk;
+    const full = panelModel(ctx({ reading: r }), cfg, uk);
+    expect(full.flow).toEqual({ label: 'Будинок живиться від мережі', value: '1.42 кВт' });
+    expect(full.eta).toMatchObject({ label: 'Батареї повні · при 1.42 кВт вистачить на', tone: 'green', color: '#76e25a' });
+    expect(full.eta!.value).toMatch(/^≈ 1[34] год$/);
+    const part = panelModel(ctx({ reading: { ...r, soc: 36, upsLoadPowerW: 600 } }), cfg, uk);
+    expect(part.flow!.value).toBe('600 Вт');
+    expect(part.eta!.label).toBe('Батареї 36% · при 600 Вт вистачить на');
+    // Beyond a week: "> 7 доб", no "≈" in front.
+    expect(panelModel(ctx({ reading: { ...r, upsLoadPowerW: 90 } }), cfg, uk).eta!.value).toBe('> 7 доб');
+    expect(panelModel(ctx({ reading: { ...r, upsLoadPowerW: 250 } }), cfg, uk).eta!.value).toBe('≈ 3 доб 12 год');
+    // Charging or a real discharge keeps the old wording.
+    expect(panelModel(ctx({ reading: { ...r, batteryPowerW: 4100 } }), cfg, uk).flow!.label).toBe('Заряд');
+    expect(panelModel(ctx({ reading: { ...r, batteryPowerW: -800 } }), cfg, uk).flow!.label).toBe('Розряд');
   });
 
   it('caption says how long the power was off during the first hour after it is back', () => {

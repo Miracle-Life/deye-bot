@@ -9,7 +9,7 @@ import type { Interval, Reading } from '../deye/types.js';
 import { runtimeHours, timeToFullMin } from '../domain/forecast.js';
 import type { EnergyDay, MonthSummary, Tariff } from '../domain/energy.js';
 import type { Segment, Summary } from '../domain/stats.js';
-import { batteryBands, batteryScaleW, batteryZone, GRID_ORANGE_W, GRID_YELLOW_W, gridChargeW, gridLoad, gridScaleW, loadZone, batteryV, type LoadZone } from '../domain/load.js';
+import { batteryBands, batteryScaleW, batteryZone, GRID_ORANGE_W, GRID_YELLOW_W, gridChargeW, gridLoad, gridScaleW, loadZone, batteryV, BATTERY_IDLE_W, runtimeColor, type LoadZone } from '../domain/load.js';
 
 export type Tone = 'green' | 'red' | 'amber' | 'plain' | 'muted';
 export type Icon = 'home' | 'sun' | 'grid' | 'battery' | 'moon' | 'calendar';
@@ -29,7 +29,7 @@ export interface PanelModel {
   soc: number | null;
   socKwh: string | null;
   flow: { label: string; value: string } | null;
-  eta: { label: string; value: string; tone: Tone } | null;
+  eta: { label: string; value: string; tone: Tone; color?: string } | null; // color: overrides tone (runtime scale)
   load: LoadBlock | null;
   schedule: ScheduleTile | null;
   tiles: Tile[];
@@ -256,11 +256,19 @@ export function panelModel(c: PanelCtx, cfg: Config, t: Dict): PanelModel {
   let eta: PanelModel['eta'] = null;
   if (r?.batteryPowerW != null) {
     const p = r.batteryPowerW;
-    if (p < 0) {
+    const house = load(r);
+    const hours = r.soc !== null && house !== null ? runtimeHours(r.soc, house, cap(r, cfg), cfg.batteryReservePct) : null;
+    if (g === 'on' && Math.abs(p) < BATTERY_IDLE_W && house !== null && r.soc !== null) {
+      // Batteries just wait: what the house takes from the grid, and how long they'd last at that load.
+      flow = { label: k.fromGridNow, value: fmtPower(house, t) };
+      if (hours !== null) {
+        const label = r.soc >= 99 ? k.reserveFull(fmtPower(house, t)) : k.reserveAt(Math.round(r.soc), fmtPower(house, t));
+        const approx = fmtApprox(hours * H, t);
+        eta = { label, value: approx.startsWith('>') ? approx : `≈ ${approx}`, tone: 'green', color: runtimeColor(hours) };
+      }
+    } else if (p < 0) {
       flow = { label: k.discharge, value: fmtPower(p, t) };
-      const l = load(r);
-      const h = r.soc !== null && l !== null ? runtimeHours(r.soc, l, cap(r, cfg), cfg.batteryReservePct) : null;
-      if (h !== null) eta = { label: k.runtime, value: fmtApprox(h * H, t), tone: 'amber' };
+      if (hours !== null) eta = { label: k.runtime, value: fmtApprox(hours * H, t), tone: 'amber', color: runtimeColor(hours) };
     } else if (p > 0) {
       flow = { label: k.charge, value: `+${fmtPower(p, t)}` };
       const m = r.soc !== null ? timeToFullMin(r.soc, p, cap(r, cfg)) : null;

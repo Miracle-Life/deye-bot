@@ -153,3 +153,16 @@ Every variable string on every card (old and new) must stay inside its box in **
   by name (exact, case/spaces ignored) and saves the new ids; only if that fails does it tell the owner once to pick
   the address again.
 - **Address search:** 10 results per page with `‹ Назад` / `Далі ›`, plus `1–10 з 34 — гортай або уточни номер`.
+
+## Follow-up (2026-11-08 evening, owner-approved)
+
+- **Load bar split:** "Home" is the inverter's measured house load (UPS-Load, same as the Home tile); "Batteries" is
+  the rest of the grid draw, i.e. charging incl. ~4.5 % conversion losses. Fallback without UPS-Load: grid − DC battery.
+- **Grid on, batteries idle** (|battery| < 100 W): top block reads `Будинок живиться від мережі · 1.42 кВт` and
+  `Батареї повні · при 1.42 кВт вистачить на ≈ 14 год` (or `Батареї 36% · при …` below 99 %). Charging and real
+  discharge keep `Заряд` / `Розряд`.
+- **"Lasts about" colour by hours left** (idle and outage alike), 10 steps starting at the ring's 100 % colour:
+  48+ `#10b981`, 36 `#2dcb80`, 24 `#4ade80`, 12 `#76e25a`, 9 `#a3e635`, 6 `#ced925`, 4 `#facc15`, 2 `#f97316`,
+  1 `#ef4444`, below 1 h `#b91c1c`.
+- **Long runtimes in days:** below 10 h `9 год 30 хв`, 10–48 h whole hours `14 год`, from 48 h days + hours
+  `3 доб 12 год`, a week or more `> 7 доб` (no `≈` in front). Applies to the panel, notifications and text panel.

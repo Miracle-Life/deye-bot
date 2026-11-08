@@ -1,6 +1,26 @@
 // Load against what the system can give: grid draw (house + charging) and, during an outage, the batteries.
 import type { Reading } from '../deye/types.js';
 
+// "Lasts about": colour by hours left. Starts at the battery ring's 100 % colour and follows the ring's
+// colours down; the in-between shades fill the steps above 12 h.
+const RUNTIME_STEPS: [number, string][] = [
+  [48, '#10b981'],
+  [36, '#2dcb80'],
+  [24, '#4ade80'],
+  [12, '#76e25a'],
+  [9, '#a3e635'],
+  [6, '#ced925'],
+  [4, '#facc15'],
+  [2, '#f97316'],
+  [1, '#ef4444'],
+  [0, '#b91c1c'],
+];
+
+export const runtimeColor = (hours: number) => RUNTIME_STEPS.find(([from]) => hours >= from)?.[1] ?? RUNTIME_STEPS.at(-1)![1];
+
+/** Battery power this small (either way) counts as idle: full batteries just trickle. */
+export const BATTERY_IDLE_W = 100;
+
 export const DEFAULT_RATED_W = 10_000; // SUN-10K; used when the inverter doesn't report its rating
 export const LOAD_HYSTERESIS_W = 500;
 export const MIN_SHOWN_W = 50;
@@ -33,10 +53,20 @@ export interface GridLoad {
 
 export type LoadZone = 'green' | 'yellow' | 'orange' | 'red';
 
-/** With sun the split is approximate: the batteries are assumed to charge from the grid first. */
-export function gridLoad(r: Pick<Reading, 'gridPowerW' | 'batteryPowerW'>): GridLoad | null {
+/**
+ * Grid draw split into the house and charging. The house is what the inverter measures going to it (UPS-Load),
+ * so it matches the "Home" tile; charging is the rest of the grid draw, i.e. its AC side with conversion losses
+ * (~4.5 %: 4.13 kW into the batteries takes ~4.31 kW from the grid). Without a measured house load: grid minus
+ * the battery's DC power. With sun the split is approximate.
+ */
+export function gridLoad(r: Pick<Reading, 'gridPowerW' | 'batteryPowerW'> & Partial<Pick<Reading, 'upsLoadPowerW' | 'loadPowerW'>>): GridLoad | null {
   const total = r.gridPowerW;
   if (total === null || total < MIN_SHOWN_W) return null;
+  const house = r.upsLoadPowerW ?? r.loadPowerW ?? null;
+  if (house !== null) {
+    const homeW = Math.min(Math.max(house, 0), total);
+    return { totalW: total, homeW, batteryW: total - homeW };
+  }
   const batteryW = Math.min(Math.max(r.batteryPowerW ?? 0, 0), total);
   return { totalW: total, homeW: total - batteryW, batteryW };
 }

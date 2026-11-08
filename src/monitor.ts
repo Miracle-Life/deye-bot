@@ -4,9 +4,9 @@ import { renderCloud, renderError, renderStartup, renderStatus, renderWatch } fr
 import type { Msg } from './bot/format.js';
 import type { Dict } from './i18n/index.js';
 import type { Config } from './config.js';
-import type { DataSource, Reading } from './deye/types.js';
-import { ErrorDigest, initialCloud, stepCloud, type CloudState, type PollOutcome } from './domain/ops.js';
-import { gridLoad, gridWatchStep } from './domain/load.js';
+import type { BatteryLimits, DataSource, Reading } from './deye/types.js';
+import { ErrorDigest, initialCloud, isStartupNetError, stepCloud, type CloudState, type PollOutcome } from './domain/ops.js';
+import { batteryAlertGate, batteryScaleW, batteryWatchStep, gridLoad, gridScaleW, gridWatchStep, batteryV } from './domain/load.js';
 import { batteryVerdict } from './schedule/logic.js';
 import { diffAlerts, initialWatch, nightShortfall, shouldWarnShort, stepTemps, type WatchEvent, type WatchState } from './domain/watch.js';
 import { errInfo, log } from './log.js';
@@ -41,6 +41,9 @@ export class Monitor {
   private timers: NodeJS.Timeout[] = [];
   /** Scheduled power-on for the current outage (from the YASNO schedule), if known. */
   scheduleTarget: (() => number | null) | null = null;
+
+  /** Inverter battery settings (discharge current), for the overload alert. */
+  limits: (() => BatteryLimits | null) | null = null;
 
   constructor(
     private src: DataSource,
@@ -86,6 +89,7 @@ export class Monitor {
   onPoll(o: PollOutcome): void {
     const now = Date.now();
     if (o.ok) this.lastOkAt = now;
+    else if (isStartupNetError(o.error, this.startedAt, now)) log.warn('poll failed during startup', { error: o.error });
     else this.noteError(o.error, now);
     const { state, event } = stepCloud(this.cloud, o, now, this.cfg.cloudDownAfterMin * MIN);
     this.cloud = state;
@@ -103,8 +107,21 @@ export class Monitor {
     const g = gridWatchStep(this.watch.gridHigh, this.poller.state.grid, r.gridPowerW, limitW);
     this.watch = { ...this.watch, gridHigh: g.high };
     const load = gridLoad(r);
-    if (g.event === 'high' && load) events.push([{ type: 'grid_high', load, limitW }, 'admin']);
+    if (g.event === 'high' && load) events.push([{ type: 'grid_high', load, limitW, scaleW: gridScaleW(r.ratedPowerW) }, 'admin']);
     if (g.event === 'ok') events.push([{ type: 'grid_ok', totalW: Math.max(r.gridPowerW ?? 0, 0) }, 'admin']);
+
+    // Outage overload: everyone, since anyone at home can switch something off.
+    const houseW = r.upsLoadPowerW ?? r.loadPowerW;
+    const batLimitW = this.cfg.batteryLoadMaxKw * 1000;
+    const b = batteryWatchStep(this.watch.batteryHigh, this.poller.state.grid, houseW, batLimitW);
+    this.watch = { ...this.watch, batteryHigh: b.high };
+    const gate = b.event && houseW !== null ? batteryAlertGate(this.watch.batteryAlert, b.event, Date.now()) : null;
+    if (gate) this.watch = { ...this.watch, batteryAlert: gate.state };
+    if (b.event === 'high' && houseW !== null && gate?.send) {
+      const scaleW = batteryScaleW(this.limits?.()?.dischargeA ?? null, batteryV(r.batteryVoltage), r.ratedPowerW);
+      events.push([{ type: 'battery_high', loadW: houseW, limitW: batLimitW, scaleW }, 'all']);
+    }
+    if (b.event === 'ok' && houseW !== null && gate?.send) events.push([{ type: 'battery_ok', loadW: houseW }, 'all']);
 
     if (this.poller.state.grid === 'off' && r.soc !== null) {
       // Battery discharge, not house load: daytime solar covers part of the load.

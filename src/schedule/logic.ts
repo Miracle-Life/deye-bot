@@ -13,7 +13,7 @@ export type TileState =
   | { kind: 'off-unscheduled' }
   | { kind: 'emergency' }
   | { kind: 'today-unpublished' }
-  | { kind: 'on-in-slot'; from: number; until: number }
+  | { kind: 'on-in-slot'; from: number; until: number; early: boolean } // early: it was off in this slot and came back
   | { kind: 'next'; start: number; end: number }
   | { kind: 'none-today'; preliminary: true };
 
@@ -35,9 +35,10 @@ export function publishedOutages(s: Schedule): Span[] {
 
 /**
  * What the schedule says about now. `outageStart` (when the current outage began) tells a late
- * power-on of a scheduled outage from a new, unscheduled one.
+ * power-on of a scheduled outage from a new, unscheduled one; `lastOnTs` (when the power last came
+ * back) tells "not off yet" from "back ahead of schedule" inside a scheduled slot.
  */
-export function tileState(s: Schedule, grid: 'on' | 'off' | null, nowMs: number, outageStart: number | null = null): TileState | null {
+export function tileState(s: Schedule, grid: 'on' | 'off' | null, nowMs: number, outageStart: number | null = null, lastOnTs: number | null = null): TileState | null {
   if (grid === null) return null;
   const today = s.days.find((d) => d.date === dateOf(nowMs));
   if (!today || today.status === 'waiting' || today.status === 'unknown') return { kind: 'today-unpublished' };
@@ -55,7 +56,7 @@ export function tileState(s: Schedule, grid: 'on' | 'off' | null, nowMs: number,
   }
 
   const inSlot = spans.find((o) => nowMs >= o.start && nowMs < o.end);
-  if (inSlot) return { kind: 'on-in-slot', from: inSlot.start, until: inSlot.end };
+  if (inSlot) return { kind: 'on-in-slot', from: inSlot.start, until: inSlot.end, early: lastOnTs !== null && lastOnTs >= inSlot.start && lastOnTs <= nowMs };
   const next = spans.find((o) => o.start > nowMs);
   if (next) return { kind: 'next', start: next.start, end: next.end };
   return { kind: 'none-today', preliminary: true };

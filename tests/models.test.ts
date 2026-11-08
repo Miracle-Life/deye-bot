@@ -21,35 +21,53 @@ describe('panelModel', () => {
 
   it('grid load: total, zone, house/battery split, charge limit', () => {
     const m = panelModel(ctx({}), cfg, ru);
-    expect(m.load).toMatchObject({ value: '7.0', max: '8 кВт', zone: 'red', legend: { home: 'Дом 2.9', battery: 'Батареи 4.1', limit: 'лимит заряда 150 А ≈ 8.1 кВт' } });
-    expect(m.load!.homeFrac).toBeCloseTo(0.3625);
-    expect(m.load!.batteryFrac).toBeCloseTo(0.5125);
+    expect(m.load).toMatchObject({ value: '7.00', max: '10 кВт', zone: 'orange', legend: { home: { label: 'Дом', kw: '2.90' }, battery: { label: 'Батареи', kw: '4.10' }, limit: 'лимит заряда от сети 80 А ≈ 4.34 кВт' } });
+    expect(m.load!.homeFrac).toBeCloseTo(0.29);
+    expect(m.load!.batteryFrac).toBeCloseTo(0.41);
   });
 
   it('battery mode: house draw against the discharge/inverter limit', () => {
     const outage = { ...base, ts: now - MIN, soc: 60, batteryPowerW: -2400, upsLoadPowerW: 2400, batteryVoltage: 54.3, ratedPowerW: 10_000, gridVoltages: [0, 0, 0] };
     const m = panelModel(ctx({ reading: outage, grid: { state: 'off', missingPhases: ['L1', 'L2', 'L3'], ambiguous: false } }), cfg, ru);
-    expect(m.load).toMatchObject({ label: 'От батарей', value: '2.4', max: '9.8 кВт', zone: 'green', legend: { home: 'Дом 2.4', battery: null, limit: 'лимит разряда 180 А ≈ 9.8 кВт · инвертор 10 кВт' } });
-    expect(m.load!.homeFrac).toBeCloseTo(2400 / 9774);
-    expect(m.load!.scale).toEqual({ yellow: 0.5, orange: 0.7, red: 0.9 });
+    expect(m.load).toMatchObject({ label: 'От батарей', value: '2.40', max: '8.70 кВт', zone: 'green', legend: { home: { label: 'Дом', kw: '2.40' }, battery: null, limit: 'лимит разряда 180 А ≈ 8.70 кВт · инвертор 10 кВт' } });
+    expect(m.load!.homeFrac).toBeCloseTo(2400 / 8699);
+    expect(m.load!.scale).toEqual({ yellow: 0.5, orange: 0.7, red: 7000 / 8699 });
   });
 
-  it('battery mode: no block when no limit is known', () => {
+  it('battery mode: rated power (10 kW) when no limit is known', () => {
     const outage = { ...base, ts: now - MIN, soc: 60, batteryPowerW: -2400, upsLoadPowerW: 2400, gridVoltages: [0, 0, 0] };
-    expect(panelModel(ctx({ reading: outage, grid: { state: 'off', missingPhases: [], ambiguous: false }, limits: null }), cfg, ru).load).toBeNull();
+    expect(panelModel(ctx({ reading: outage, grid: { state: 'off', missingPhases: [], ambiguous: false }, limits: null }), cfg, ru).load!.max).toBe('10 кВт');
+  });
+
+  it('a reported 0 V battery voltage uses the nominal voltage, never "0 kW" or NaN', () => {
+    const out = { ...base, ts: now - MIN, soc: 60, batteryPowerW: -2400, upsLoadPowerW: 2400, batteryVoltage: 0, ratedPowerW: 10_000, gridVoltages: [0, 0, 0] };
+    const o = panelModel(ctx({ reading: out, grid: { state: 'off', missingPhases: ['L1', 'L2', 'L3'], ambiguous: false } }), cfg, ru).load!;
+    expect(o.max).toBe('8.20 кВт');
+    expect(Number.isFinite(o.homeFrac)).toBe(true);
+    const grid = { ...charging, batteryVoltage: 0 };
+    expect(panelModel(ctx({ reading: grid }), cfg, ru).load!.legend.limit).toBe('лимит заряда от сети 80 А ≈ 4.10 кВт');
+  });
+
+  it('real-world numbers: grid 8.43 kW, outage 1 kW at 53.1 V', () => {
+    const grid = { ...base, ts: now - MIN, soc: 96, gridPowerW: 8432, batteryPowerW: 4154, upsLoadPowerW: 4074, batteryVoltage: 54.84, ratedPowerW: 10_000, gridVoltages: [230, 230, 230] };
+    const g = panelModel(ctx({ reading: grid }), { ...cfg, gridLoadMaxKw: 8, gridChargeA: 80 }, dicts.en);
+    expect(g.load).toMatchObject({ max: '10 kW', zone: 'red', legend: { limit: 'grid charge limit 80 A ≈ 4.39 kW' } });
+    const out = { ...base, ts: now - MIN, soc: 93, batteryPowerW: -1050, upsLoadPowerW: 1000, batteryVoltage: 53.1, ratedPowerW: 10_000, gridVoltages: [0, 0, 0] };
+    const o = panelModel(ctx({ reading: out, grid: { state: 'off', missingPhases: ['L1', 'L2', 'L3'], ambiguous: false } }), cfg, dicts.en);
+    expect(o.load!.max).toBe('8.51 kW');
+    expect(o.load!.legend.limit).toContain('180 A ≈ 8.51 kW');
   });
 
   it('panel in English', () => {
     const m = panelModel(ctx({}), cfg, dicts.en);
     expect(m.status.label).toBe('Power is on');
     expect(m.tiles[0]!.label).toBe('Home');
-    expect(m.load!.max).toBe('8 kW');
+    expect(m.load!.max).toBe('10 kW');
     expect(m.load!.label).toBe('From grid');
   });
 
-  it('grid load: no limit when unknown, scale from the bands and threshold', () => {
-    expect(panelModel(ctx({}), cfg, ru).load!.scale).toEqual({ yellow: 0.5, orange: 0.6875, red: 0.875 });
-    expect(panelModel(ctx({ limits: null }), cfg, ru).load!.legend.limit).toBeNull();
+  it('grid load: scale from the bands and threshold', () => {
+    expect(panelModel(ctx({}), cfg, ru).load!.scale).toEqual({ yellow: 0.5, orange: 0.65, red: 0.8 });
   });
 
   it('outage: status, discharge, runtime, red grid tile', () => {
@@ -69,12 +87,19 @@ describe('panelModel', () => {
     expect(m.status).toEqual({ kind: 'off', label: 'Света нет · 5 ч 9 мин' });
     expect(m.soc).toBe(69);
     expect(m.socKwh).toBe('16.3 кВт·ч');
-    expect(m.flow).toEqual({ label: 'Разряд', value: '1.1 кВт' });
+    expect(m.flow).toEqual({ label: 'Разряд', value: '1.13 кВт' });
     expect(m.eta).toEqual({ label: 'Хватит примерно на', value: '12 ч', tone: 'amber' });
     expect(m.tiles.find((t) => t.icon === 'grid')).toMatchObject({ value: 'нет', tone: 'red' });
-    expect(m.tiles.find((t) => t.icon === 'home')).toMatchObject({ value: '1.1', unit: 'кВт' });
+    expect(m.tiles.find((t) => t.icon === 'home')).toMatchObject({ value: '1.07', unit: 'кВт' });
     expect(m.stale).toBeNull();
     expect(m.caption).toBe('🔴 <b>Света нет</b> · с 00:41');
+  });
+
+  it('caption says how long the power was off during the first hour after it is back', () => {
+    const r = { ...base, ts: now - MIN, soc: 90, batteryPowerW: 0, upsLoadPowerW: 400, gridVoltages: [229, 230, 231] };
+    const back = (end: number) => panelModel(ctx({ reading: r, lastOnTs: end, lastOutageStartTs: now - 4 * H }), cfg, dicts.uk).caption;
+    expect(back(now - 10 * MIN)).toBe('🟢 <b>Світло є</b> · не було 3 год 50 хв');
+    expect(back(now - 61 * MIN)).toBe('🟢 <b>Світло є</b>');
   });
 
   it('grid back and charging: time to full', () => {
@@ -92,7 +117,7 @@ describe('panelModel', () => {
       ru,
     );
     expect(m.status).toEqual({ kind: 'on', label: 'Свет есть' });
-    expect(m.flow).toEqual({ label: 'Заряд', value: '+3.2 кВт' });
+    expect(m.flow).toEqual({ label: 'Заряд', value: '+3.20 кВт' });
     expect(m.eta).toMatchObject({ label: 'До 100% ≈', tone: 'green' });
     expect(m.tiles.find((t) => t.icon === 'grid')).toMatchObject({ value: '230', unit: 'В', tone: 'green' });
   });
@@ -231,6 +256,17 @@ describe('panel schedule tile', () => {
     const r = { ...base2, soc: 95, batteryPowerW: -300, upsLoadPowerW: 300 };
     const m = panelModel(ctx({ reading: r, schedule: sch({ kind: 'off-until', until: at('2026-11-04T23:00'), endsAtDayEdge: false }) }), cfg, uk);
     expect(m.schedule!.lines[0]).toEqual({ text: '✓ Батарей вистачить із запасом', tone: 'green' });
+  });
+
+  it('on inside the slot: not off yet vs back early', () => {
+    const r = { ...base2, soc: 80, batteryPowerW: 0, gridVoltages: [230, 230, 230] };
+    const slot = { kind: 'on-in-slot', from: at('2026-11-04T20:00'), until: at('2026-11-05T05:30') };
+    const waiting = panelModel(ctx({ reading: r, grid: on, schedule: sch({ ...slot, early: false }) }), cfg, uk).schedule!;
+    expect(waiting).toMatchObject({ title: 'Відключення за графіком вже йде з 20:00', tone: 'amber' });
+    expect(waiting.lines[0]).toEqual({ text: 'світло поки є · до 05:30', tone: 'muted' });
+    const early = panelModel(ctx({ reading: r, grid: on, schedule: sch({ ...slot, early: true }) }), cfg, uk).schedule!;
+    expect(early).toMatchObject({ title: 'Світло дали раніше графіка', tone: 'green' });
+    expect(early.lines[0]).toEqual({ text: 'за графіком відключення до 05:30, можуть вимкнути знову', tone: 'amber' });
   });
 
   it('on: next outage with the projected charge', () => {

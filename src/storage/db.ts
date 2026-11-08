@@ -41,6 +41,8 @@ const MIGRATIONS: string[] = [
   // Battery health: small, kept forever (raw readings are only kept 90 days).
   `CREATE TABLE battery_days (date TEXT PRIMARY KEY, json TEXT NOT NULL);
    CREATE TABLE capacity_runs (start_ts INTEGER PRIMARY KEY, json TEXT NOT NULL);`,
+  // Past YASNO schedules, one row per day (kept like readings, 90 days).
+  `CREATE TABLE schedule_days (date TEXT PRIMARY KEY, json TEXT NOT NULL);`,
 ];
 
 export function openDb(path: string): Database {

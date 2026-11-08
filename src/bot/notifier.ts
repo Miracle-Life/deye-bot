@@ -1,13 +1,13 @@
-import { InputFile } from 'grammy';
+import { InputFile, type InlineKeyboard } from 'grammy';
 import { errInfo, log } from '../log.js';
 import type { UserRow } from '../storage/repo.js';
 import type { Msg } from './format.js';
 
-type Opts = { parse_mode: 'HTML'; disable_notification: boolean };
+type Opts = { parse_mode: 'HTML'; disable_notification: boolean; reply_markup?: InlineKeyboard };
 
 export interface SendApi {
-  sendMessage(chatId: number, text: string, opts: Opts): Promise<unknown>;
-  sendPhoto(chatId: number, photo: InputFile | string, opts: Opts & { caption: string }): Promise<{ photo?: { file_id: string }[] }>;
+  sendMessage(chatId: number, text: string, opts: Opts): Promise<{ message_id: number }>;
+  sendPhoto(chatId: number, photo: InputFile | string, opts: Opts & { caption: string }): Promise<{ message_id: number; photo?: { file_id: string }[] }>;
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -28,19 +28,25 @@ export async function broadcast(
   msg: Msg,
   onBlocked: (tgId: number) => void,
   quietHour = false,
+  onSent?: (tgId: number, messageId: number, asPhoto: boolean) => void,
 ): Promise<{ sent: number; failed: number }> {
   let sent = 0;
   let failed = 0;
   let fileId: string | null = null; // upload once, reuse for everyone else
   let photoOk = !!msg.photo;
   for (const u of users) {
-    const opts: Opts = { parse_mode: 'HTML', disable_notification: msg.silent || u.muted || (u.nightQuiet && quietHour) };
+    const opts: Opts = { parse_mode: 'HTML', disable_notification: msg.silent || u.muted || (u.nightQuiet && quietHour), ...(msg.kb ? { reply_markup: msg.kb } : {}) };
+    const sendText = async () => {
+      const res = await api.sendMessage(u.tgId, msg.fallbackText ?? msg.text, opts);
+      onSent?.(u.tgId, res.message_id, false);
+    };
     const sendPhoto = async () => {
       const res = await api.sendPhoto(u.tgId, fileId ?? new InputFile(msg.photo!, 'deye.png'), { ...opts, caption: msg.text });
       fileId ??= res.photo?.at(-1)?.file_id ?? null;
+      onSent?.(u.tgId, res.message_id, true);
     };
     const send = async () => {
-      if (!photoOk) return void (await api.sendMessage(u.tgId, msg.text, opts));
+      if (!photoOk) return void (await sendText());
       try {
         await sendPhoto();
       } catch (e) {
@@ -48,7 +54,7 @@ export async function broadcast(
         if (code === 403 || code === 429) throw e;
         log.warn('photo send failed, falling back to text', errInfo(e));
         photoOk = false;
-        await api.sendMessage(u.tgId, msg.text, opts);
+        await sendText();
       }
     };
     try {

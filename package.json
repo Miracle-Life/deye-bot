@@ -10,7 +10,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "discover": "tsx scripts/discover.ts",
     "start": "node --expose-gc dist/main.js",
-    "readme-assets": "tsx scripts/readme-assets.ts"
+    "readme-assets": "tsx scripts/readme-assets.ts",
+    "preview": "tsx scripts/preview-cards.ts"
   },
   "type": "module",
   "dependencies": {

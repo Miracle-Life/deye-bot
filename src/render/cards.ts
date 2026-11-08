@@ -4,7 +4,7 @@ import type { BatteryCardModel, DayModel, Icon, LoadBlock, MoneyModel, PanelMode
 
 export const CARD_W = 540;
 
-const C = {
+export const C = {
   bg0: '#151c2f',
   bg1: '#0a0f1d',
   tile: 'rgba(255,255,255,0.05)',
@@ -26,7 +26,7 @@ const C = {
   future: 'rgba(255,255,255,0.06)',
 };
 
-const TONE: Record<Tone, string> = { green: C.green, red: C.red, amber: C.amber, plain: C.text, muted: C.muted };
+export const TONE: Record<Tone, string> = { green: C.green, red: C.red, amber: C.amber, plain: C.text, muted: C.muted };
 
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
@@ -36,13 +36,10 @@ const textW = (s: string, size: number, weight = 600) => s.length * size * (weig
 /** Bold font size that keeps `s` within `maxW` (longer units in some languages). */
 export const fitFont = (s: string, maxW: number, base: number) => Math.min(base, Math.floor((maxW / (s.length * 0.6)) * 10) / 10);
 
-function frame(h: number, body: string): string {
+export function frame(h: number, body: string): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${CARD_W}" height="${h}" viewBox="0 0 ${CARD_W} ${h}" font-family="Inter">
 <defs>
   <linearGradient id="bg" x1="0" y1="0" x2="0.6" y2="1"><stop offset="0" stop-color="${C.bg0}"/><stop offset="1" stop-color="${C.bg1}"/></linearGradient>
-  <linearGradient id="gGreen" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${C.green}"/><stop offset="1" stop-color="${C.greenDeep}"/></linearGradient>
-  <linearGradient id="gAmber" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${C.amber}"/><stop offset="1" stop-color="${C.amberDeep}"/></linearGradient>
-  <linearGradient id="gRed" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${C.red}"/><stop offset="1" stop-color="${C.redDeep}"/></linearGradient>
   <radialGradient id="glow" cx="0.15" cy="0" r="0.9"><stop offset="0" stop-color="#2a3b6b" stop-opacity="0.55"/><stop offset="1" stop-color="#2a3b6b" stop-opacity="0"/></radialGradient>
 </defs>
 <rect width="${CARD_W}" height="${h}" fill="url(#bg)"/>
@@ -74,14 +71,26 @@ function pill(x: number, y: number, label: string, kind: 'on' | 'off' | 'unknown
 <text x="${x + 32}" y="${y + 21}" font-size="14" font-weight="600" fill="${color}">${esc(label)}</text>`;
 }
 
+// Battery ring: seven equal 15 % steps, deep red → emerald.
+const RING_STEPS: [number, string][] = [
+  [90, '#10b981'],
+  [75, '#4ade80'],
+  [60, '#a3e635'],
+  [45, '#facc15'],
+  [30, '#f97316'],
+  [15, '#ef4444'],
+  [0, '#b91c1c'],
+];
+
+export const ringColor = (pct: number) => RING_STEPS.find(([from]) => pct >= from)?.[1] ?? RING_STEPS.at(-1)![1];
+
 function ring(cx: number, cy: number, r: number, soc: number | null, sub: string | null): string {
   const circ = 2 * Math.PI * r;
   const pct = soc === null ? 0 : Math.max(0, Math.min(100, soc));
-  const grad = pct >= 50 ? 'gGreen' : pct >= 20 ? 'gAmber' : 'gRed';
   const arc =
     soc === null
       ? ''
-      : `<circle cx="${cx}" cy="${cy}" r="${r}" stroke="url(#${grad})" stroke-width="14" fill="none" stroke-linecap="round" stroke-dasharray="${((circ * pct) / 100).toFixed(1)} ${circ.toFixed(1)}" transform="rotate(-90 ${cx} ${cy})"/>`;
+      : `<circle cx="${cx}" cy="${cy}" r="${r}" stroke="${ringColor(pct)}" stroke-width="14" fill="none" stroke-linecap="round" stroke-dasharray="${((circ * pct) / 100).toFixed(1)} ${circ.toFixed(1)}" transform="rotate(-90 ${cx} ${cy})"/>`;
   return `<circle cx="${cx}" cy="${cy}" r="${r}" stroke="rgba(255,255,255,0.08)" stroke-width="14" fill="none"/>
 ${arc}
 <text x="${cx}" y="${cy + 6}" text-anchor="middle" font-size="38" font-weight="800" fill="${C.text}">${soc === null ? '—' : `${Math.round(pct)}%`}</text>
@@ -98,9 +107,11 @@ ${icon(t.icon, x + 16, y + 15, iconColor)}
 }
 
 const ZONE: Record<LoadZone, string> = { green: C.green, yellow: C.amber, orange: C.orange, red: C.red };
-const LOAD_H = 96;
+const LOAD_H = 140; // bar, zone strip, legend, then the limit line
+const HOME_C = '#38bdf8'; // load bar: what the house takes
+const CHARGE_C = '#e879f9'; // load bar: what charging takes
+const BAR_H = 18;
 
-/** "From grid" block: total vs the breaker, house/battery split, zone scale, charge limit. */
 function loadBlock(y: number, l: LoadBlock): string {
   const x = 24;
   const w = CARD_W - 48;
@@ -116,35 +127,43 @@ function loadBlock(y: number, l: LoadBlock): string {
     [orange, red, C.orangeDeep],
     [red, 1, C.redDeep],
   ];
+  const sy = y + 44 + BAR_H + 6;
   const scale = bands
     .filter(([a, b]) => b > a)
-    .map(([a, b, c]) => `<rect x="${(bx + bw * a).toFixed(1)}" y="${y + 60}" width="${(bw * (b - a)).toFixed(1)}" height="4" fill="${c}" fill-opacity="0.7"/>`)
+    .map(([a, b, c]) => `<rect x="${(bx + bw * a).toFixed(1)}" y="${sy}" width="${(bw * (b - a)).toFixed(1)}" height="4" fill="${c}" fill-opacity="0.7"/>`)
     .join('');
-  const swatch2 = bx + 12 + textW(l.legend.home, 12, 500) + 14;
+  // Legend: coloured swatch, grey label, value in the segment's colour.
+  const ly = sy + 26;
+  const item = (lx: number, color: string, it: { label: string; kw: string }) =>
+    `<rect x="${lx}" y="${ly - 10}" width="11" height="11" rx="3" fill="${color}"/>
+<text x="${lx + 17}" y="${ly}" font-size="13" font-weight="500" fill="${C.muted}">${esc(it.label)} <tspan font-weight="700" fill="${color}">${esc(it.kw)}</tspan></text>`;
+  const second = bx + 17 + textW(`${l.legend.home.label} ${l.legend.home.kw}`, 13, 600) + 22;
+  const limitY = ly + 30;
   return `<rect x="${x}" y="${y}" width="${w}" height="${LOAD_H}" rx="16" fill="${C.tile}" stroke="${C.tileStroke}"/>
 ${icon('grid', bx, y + 13, ZONE[l.zone])}
 <text x="${bx + 26}" y="${y + 27}" font-size="14" font-weight="500" fill="${C.muted}">${esc(l.label)}</text>
 <text x="${right}" y="${y + 30}" text-anchor="end"><tspan font-size="24" font-weight="700" fill="${ZONE[l.zone]}">${esc(l.value)}</tspan><tspan dx="6" font-size="14" font-weight="500" fill="${C.muted}">/ ${esc(l.max)}</tspan></text>
-<clipPath id="loadBar"><rect x="${bx}" y="${y + 44}" width="${bw}" height="10" rx="5"/></clipPath>
+<clipPath id="loadBar"><rect x="${bx}" y="${y + 44}" width="${bw}" height="${BAR_H}" rx="${BAR_H / 2}"/></clipPath>
 <g clip-path="url(#loadBar)">
-  <rect x="${bx}" y="${y + 44}" width="${bw}" height="10" fill="rgba(255,255,255,0.08)"/>
-  <rect x="${bx}" y="${y + 44}" width="${homeW.toFixed(1)}" height="10" fill="${C.blue}"/>
-  <rect x="${(bx + homeW).toFixed(1)}" y="${y + 44}" width="${batW.toFixed(1)}" height="10" fill="${C.violet}"/>
+  <rect x="${bx}" y="${y + 44}" width="${bw}" height="${BAR_H}" fill="rgba(255,255,255,0.08)"/>
+  <rect x="${bx}" y="${y + 44}" width="${homeW.toFixed(1)}" height="${BAR_H}" fill="${HOME_C}"/>
+  <rect x="${(bx + homeW).toFixed(1)}" y="${y + 44}" width="${batW.toFixed(1)}" height="${BAR_H}" fill="${CHARGE_C}"/>
 </g>
-${scale}
-<rect x="${bx}" y="${y + 75}" width="8" height="8" rx="2" fill="${C.blue}"/>
-<text x="${bx + 12}" y="${y + 83}" font-size="12" font-weight="500" fill="${C.muted}">${esc(l.legend.home)}</text>
+<clipPath id="zoneStrip"><rect x="${bx}" y="${sy}" width="${bw}" height="4" rx="2"/></clipPath>
+<g clip-path="url(#zoneStrip)">${scale}</g>
+${item(bx, HOME_C, l.legend.home)}
+${l.legend.battery ? item(second, CHARGE_C, l.legend.battery) : ''}
 ${
-  l.legend.battery
-    ? `<rect x="${swatch2}" y="${y + 75}" width="8" height="8" rx="2" fill="${C.violet}"/>
-<text x="${swatch2 + 12}" y="${y + 83}" font-size="12" font-weight="500" fill="${C.muted}">${esc(l.legend.battery)}</text>`
+  l.legend.limit
+    ? `<line x1="${bx}" y1="${limitY - 18}" x2="${right}" y2="${limitY - 18}" stroke="rgba(255,255,255,0.06)"/>
+${icon('grid', bx - 2, limitY - 13, C.muted, 16)}
+<text x="${bx + 20}" y="${limitY}" font-size="${fitFont(l.legend.limit, bw - 22, 13)}" font-weight="500" fill="${C.muted}">${esc(l.legend.limit)}</text>`
     : ''
-}
-${l.legend.limit ? `<text x="${right}" y="${y + 83}" text-anchor="end" font-size="12" font-weight="500" fill="${C.muted}">${esc(l.legend.limit)}</text>` : ''}`;
+}`;
 }
 
 // Inter has no colour emoji; the variation selector would show as a box.
-const plain = (s: string) => esc(s.replace(/\uFE0F/g, ''));
+export const plain = (s: string) => esc(s.replace(/\uFE0F/g, ''));
 
 function scheduleTileHeight(s: ScheduleTile): number {
   return 70 + s.lines.length * 22;
@@ -208,12 +227,12 @@ export function svgPanel(m: PanelModel): string {
   return frame(h, parts.join('\n'));
 }
 
-function statsRow(y: number, stats: Stat[]): string {
+export function statsRow(y: number, stats: Stat[]): string {
   const w = (CARD_W - 48) / stats.length;
   return stats
     .map(
       (s, i) => `<text x="${24 + i * w}" y="${y}" font-size="13" font-weight="500" fill="${C.muted}">${esc(s.label)}</text>
-<text x="${24 + i * w}" y="${y + 32}" font-size="${fitFont(s.value, w - 12, 26)}" font-weight="700" fill="${TONE[s.tone]}">${esc(s.value)}</text>`,
+<text x="${24 + i * w}" y="${y + 32}" font-size="${fitFont(s.sub ? `${s.value} ${s.sub}` : s.value, w - 12, 26)}" font-weight="700" fill="${TONE[s.tone]}">${esc(s.value)}${s.sub ? ` <tspan fill="${C.muted}" font-weight="600">${esc(s.sub)}</tspan>` : ''}</text>`,
     )
     .join('\n');
 }

@@ -30,8 +30,16 @@ describe('loadConfig', () => {
     expect(c.adminTelegramId).toBe(123);
   });
 
-  it('reads the grid-load threshold, 7 kW by default', () => {
-    expect(loadConfig(minimal).gridLoadMaxKw).toBe(7);
+  it('load limits: grid 8 kW, batteries 7 kW, grid charge 80 A by default', () => {
+    const c = loadConfig(minimal);
+    expect(c.gridLoadMaxKw).toBe(8);
+    expect(c.batteryLoadMaxKw).toBe(7);
+    expect(c.gridChargeA).toBe(80);
+    expect(() => loadConfig({ ...minimal, GRID_CHARGE_A: '5' })).toThrow(/GRID_CHARGE_A/);
+    expect(() => loadConfig({ ...minimal, BATTERY_LOAD_MAX_KW: '0' })).toThrow(/BATTERY_LOAD_MAX_KW/);
+  });
+
+  it('reads the grid-load threshold', () => {
     expect(loadConfig({ ...minimal, GRID_LOAD_MAX_KW: '6.5' }).gridLoadMaxKw).toBe(6.5);
   });
 

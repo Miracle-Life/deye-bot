@@ -14,12 +14,14 @@ export type Tunable =
   | 'quietFrom'
   | 'quietTo'
   | 'cloudDownAfterMin'
-  | 'gridLoadMaxKw';
+  | 'gridLoadMaxKw'
+  | 'batteryLoadMaxKw'
+  | 'gridChargeA';
 
 export type Overrides = Partial<Pick<Config, Tunable>>;
 
 export type SectionId = keyof Dict['cfg']['sections'];
-type Unit = 'uah' | 'pct' | 'c' | 'min' | 'kw';
+type Unit = 'uah' | 'pct' | 'c' | 'min' | 'kw' | 'a';
 
 // Texts (labels, hints, units) come from the dictionary: t.cfg.fields[key], t.cfg.sections[id].
 export interface Field {
@@ -46,7 +48,9 @@ export const FIELDS: Field[] = [
   { key: 'batteryReservePct', section: 'battery', kind: 'choice', options: [0, 5, 10, 15, 20, 30], unit: 'pct' },
   { key: 'batteryTempMaxC', section: 'temp', kind: 'choice', options: [35, 40, 45, 50, 55], unit: 'c' },
   { key: 'inverterTempMaxC', section: 'temp', kind: 'choice', options: [60, 65, 70, 75, 80, 85], unit: 'c' },
-  { key: 'gridLoadMaxKw', section: 'load', kind: 'choice', options: [5, 6, 6.5, 7, 7.5], unit: 'kw' },
+  { key: 'gridLoadMaxKw', section: 'load', kind: 'choice', options: [7, 7.5, 8, 8.5, 9, 9.5], unit: 'kw' },
+  { key: 'batteryLoadMaxKw', section: 'load', kind: 'choice', options: [6, 6.5, 7, 7.5, 8], unit: 'kw' },
+  { key: 'gridChargeA', section: 'load', kind: 'choice', options: [40, 50, 60, 70, 80, 90, 100, 120, 150], unit: 'a' },
   { key: 'quietFrom', section: 'quiet', kind: 'choice', options: HOURS_EVENING, hour: true },
   { key: 'quietTo', section: 'quiet', kind: 'choice', options: HOURS_MORNING, hour: true },
   { key: 'cloudDownAfterMin', section: 'service', kind: 'choice', options: [5, 10, 15, 30, 60], unit: 'min' },
@@ -65,6 +69,8 @@ export function unitText(f: Field, t: Dict): string {
       return ` ${t.units.min}`;
     case 'kw':
       return ` ${t.units.kw}`;
+    case 'a':
+      return ` ${t.units.a}`;
     default:
       return '';
   }

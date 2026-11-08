@@ -2,23 +2,25 @@
 import { DateTime } from 'luxon';
 import type { CloudEvent } from '../domain/ops.js';
 import type { WatchEvent } from '../domain/watch.js';
-import { BREAKER_W } from '../domain/load.js';
 import type { Dict } from '../i18n/index.js';
-import { esc, fmtDuration, fmtPower, fmtTime, type Msg } from './format.js';
+import { esc, fmtDuration, fmtKw, fmtKwMax, fmtPower, fmtTime, type Msg } from './format.js';
 
 const round10 = (w: number) => Math.round(w / 10) * 10;
-const kw1 = (w: number) => (w / 1000).toFixed(1);
 
 export function renderWatch(e: WatchEvent, z: string, t: Dict): Msg {
   const w = t.watch;
   switch (e.type) {
     case 'grid_high':
       return {
-        text: `<b>${w.gridHigh(kw1(e.load.totalW))}</b>\n<i>${w.gridHighNote(kw1(e.load.homeW), kw1(e.load.batteryW), e.limitW / 1000, BREAKER_W / 1000)}</i>`,
+        text: `<b>${w.gridHigh(fmtKw(e.load.totalW))}</b>\n<i>${w.gridHighNote(fmtKw(e.load.homeW), fmtKw(e.load.batteryW), e.limitW / 1000, fmtKwMax(e.scaleW))}</i>`,
         silent: false,
       };
     case 'grid_ok':
-      return { text: `<b>${w.gridOk(kw1(e.totalW))}</b>`, silent: true };
+      return { text: `<b>${w.gridOk(fmtKw(e.totalW))}</b>`, silent: true };
+    case 'battery_high':
+      return { text: `<b>${w.batteryHigh(fmtKw(e.loadW))}</b>\n<i>${w.batteryHighNote(e.limitW / 1000, fmtKwMax(e.scaleW))}</i>`, silent: false };
+    case 'battery_ok':
+      return { text: `<b>${w.batteryOk(fmtKw(e.loadW))}</b>`, silent: true };
     case 'temp_high':
       return { text: `<b>${w.tempHigh(e.which, Math.round(e.tempC))}</b>\n<i>${w.tempHighNote(e.limitC)}</i>`, silent: false };
     case 'temp_ok':

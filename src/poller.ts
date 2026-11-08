@@ -12,7 +12,8 @@ const DAY = 86_400_000;
 const RETENTION_MS = 90 * DAY;
 const MANUAL_MIN_GAP_MS = 20_000;
 
-export type Notify = (e: DetectorEvent) => Promise<void>;
+/** `replayed`: found by the backfill after the bot was down, not seen live. */
+export type Notify = (e: DetectorEvent, replayed: boolean) => Promise<void>;
 
 export class Poller {
   state: DetectorState;
@@ -58,7 +59,7 @@ export class Poller {
     await replay;
     await this.pollNow(true);
     // After the live poll so the notification picture shows a full reading.
-    for (const e of missed) await this.notify(e).catch((err) => log.error('notify failed', { type: e.type, ...errInfo(err) }));
+    for (const e of missed) await this.notify(e, true).catch((err) => log.error('notify failed', { type: e.type, ...errInfo(err) }));
   }
 
   stop(): void {
@@ -158,7 +159,7 @@ export class Poller {
     this.db(() => this.repo.saveState(this.state), undefined);
     for (const e of events) {
       try {
-        await this.notify(e);
+        await this.notify(e, false);
       } catch (err) {
         log.error('notify failed', { type: e.type, ...errInfo(err) });
       }
@@ -207,8 +208,9 @@ export class Poller {
   private purge(): void {
     try {
       const cutoff = Date.now() - RETENTION_MS;
-      const energyDays = this.repo.purgeEnergyBefore(DateTime.fromMillis(cutoff, { zone: this.cfg.timezone }).toISODate()!);
-      log.info('retention purge', { ...this.repo.purgeOlderThan(cutoff), energyDays });
+      const cutoffDate = DateTime.fromMillis(cutoff, { zone: this.cfg.timezone }).toISODate()!;
+      const energyDays = this.repo.purgeEnergyBefore(cutoffDate);
+      log.info('retention purge', { ...this.repo.purgeOlderThan(cutoff, cutoffDate), energyDays });
     } catch (e) {
       log.error('retention purge failed', errInfo(e));
     }

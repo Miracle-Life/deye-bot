@@ -19,7 +19,7 @@ describe('texts in other languages', () => {
   });
 
   it('power uses the language units', () => {
-    expect(fmtPower(4100, dicts.en)).toBe('4.1 kW');
+    expect(fmtPower(4100, dicts.en)).toBe('4.10 kW');
   });
 
   it('outage notification in English', () => {
@@ -31,7 +31,7 @@ describe('texts in other languages', () => {
 
   it('grid-load alert in Ukrainian', () => {
     const m = renderWatch({ type: 'grid_high', load: { totalW: 7300, homeW: 3100, batteryW: 4200 }, limitW: 7000 }, 'Europe/Kyiv', dicts.uk);
-    expect(m.text).toContain('З мережі 7.3 кВт');
+    expect(m.text).toContain('З мережі 7.30 кВт');
   });
 
   it('settings values in English', () => {

@@ -22,6 +22,8 @@ export interface Config {
   inverterTempMaxC: number;
   cloudDownAfterMin: number;
   gridLoadMaxKw: number; // admin alert and red zone from this grid draw
+  batteryLoadMaxKw: number; // alert to everyone and red zone from this house draw during an outage
+  gridChargeA: number; // inverter Batt set2 → Grid Charge, A (not in the cloud API)
   batteryRatedCycles: number; // rated cycle life for the wear estimate
   tariffDay: number; // ₴/kWh
   tariffNight: number | null; // null = single-zone
@@ -74,6 +76,10 @@ export function loadConfig(env: Env): Config {
   if (pollIntervalSec < 10 || pollIntervalSec > 600) throw new Error('Config: POLL_INTERVAL_SEC must be 10..600');
   const batteryRatedCycles = num(env, 'BATTERY_RATED_CYCLES', 6000);
   if (batteryRatedCycles < 500 || batteryRatedCycles > 20000) throw new Error('Config: BATTERY_RATED_CYCLES must be 500..20000');
+  const gridChargeA = num(env, 'GRID_CHARGE_A', 80);
+  if (gridChargeA < 10 || gridChargeA > 300) throw new Error('Config: GRID_CHARGE_A must be 10..300');
+  const batteryLoadMaxKw = num(env, 'BATTERY_LOAD_MAX_KW', 7);
+  if (batteryLoadMaxKw < 1 || batteryLoadMaxKw > 20) throw new Error('Config: BATTERY_LOAD_MAX_KW must be 1..20');
   const watchdogUrl = str(env, 'WATCHDOG_URL');
   // The beat carries the shared secret in a header.
   if (watchdogUrl && !watchdogUrl.startsWith('https://')) throw new Error('Config: WATCHDOG_URL must be https://');
@@ -99,7 +105,9 @@ export function loadConfig(env: Env): Config {
     batteryTempMaxC: num(env, 'BATTERY_TEMP_MAX_C', 45),
     inverterTempMaxC: num(env, 'INVERTER_TEMP_MAX_C', 70),
     cloudDownAfterMin: num(env, 'CLOUD_DOWN_AFTER_MIN', 10),
-    gridLoadMaxKw: num(env, 'GRID_LOAD_MAX_KW', 7),
+    gridLoadMaxKw: num(env, 'GRID_LOAD_MAX_KW', 8),
+    batteryLoadMaxKw,
+    gridChargeA,
     batteryRatedCycles,
     tariffDay: num(env, 'TARIFF_DAY', 4.32),
     tariffNight: /^(none|off|0)$/i.test(env.TARIFF_NIGHT ?? '') ? null : num(env, 'TARIFF_NIGHT', 2.16),

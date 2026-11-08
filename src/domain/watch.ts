@@ -2,7 +2,7 @@
 import { DateTime } from 'luxon';
 import type { Reading } from '../deye/types.js';
 import { runtimeHours } from './forecast.js';
-import type { GridLoad } from './load.js';
+import type { BatteryAlertState, GridLoad } from './load.js';
 
 const H = 3_600_000;
 const HYSTERESIS_C = 5;
@@ -30,12 +30,16 @@ export interface WatchState {
   alerts: KnownAlerts;
   alertsInit: boolean;
   gridHigh: boolean; // grid draw is over the alert threshold
+  batteryHigh: boolean; // house draw on batteries is over the alert threshold
+  batteryAlert: BatteryAlertState;
 }
 
-export const initialWatch: WatchState = { temps: { battery: false, inverter: false }, nightWarnFor: null, alerts: {}, alertsInit: false, gridHigh: false };
+export const initialWatch: WatchState = { temps: { battery: false, inverter: false }, nightWarnFor: null, alerts: {}, alertsInit: false, gridHigh: false, batteryHigh: false, batteryAlert: { alertedAt: null, alerted: false } };
 
 export type WatchEvent =
-  | { type: 'grid_high'; load: GridLoad; limitW: number }
+  | { type: 'grid_high'; load: GridLoad; limitW: number; scaleW: number }
+  | { type: 'battery_high'; loadW: number; limitW: number; scaleW: number }
+  | { type: 'battery_ok'; loadW: number }
   | { type: 'grid_ok'; totalW: number }
   | { type: 'temp_high' | 'temp_ok'; which: TempWhich; tempC: number; limitC: number }
   | { type: 'alert_new' | 'alert_end'; alert: DeyeAlert }

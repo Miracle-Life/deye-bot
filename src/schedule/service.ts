@@ -4,6 +4,7 @@ import { esc, fmtTime } from '../bot/format.js';
 import { dicts, type Dict } from '../i18n/index.js';
 import { errInfo, log } from '../log.js';
 import type { Repo, UserRow } from '../storage/repo.js';
+import { mergeArchivedDay, toArchivedDays } from './archive.js';
 import { dueReminders, refreshAllowed } from './logic.js';
 import type { Address, Schedule } from './model.js';
 import { YasnoFormatError, type YasnoClient } from './yasno.js';
@@ -21,6 +22,7 @@ interface StoredAddress extends Address {
 
 interface Notices {
   format?: string; // last format error the admin was told about
+  addressGone?: boolean; // YASNO no longer knows the stored street/house ids; the owner was told
   unknownTypes?: string[];
 }
 
@@ -65,6 +67,26 @@ export class ScheduleService {
     return a && s && s.group === a.group ? s : null;
   }
 
+  /** Each fetched day goes to the archive (latest wins, see mergeArchivedDay). */
+  saveArchive(s: Schedule): void {
+    try {
+      for (const d of toArchivedDays(s)) this.repo.putScheduleDay(mergeArchivedDay(this.repo.getScheduleDay(d.date), d));
+    } catch (e) {
+      // The archive is a nice-to-have: a DB hiccup must not fail the schedule or stop the bot.
+      log.warn('schedule archive write failed', errInfo(e));
+    }
+  }
+
+  /** On start: the schedule already in the DB goes to the archive (idempotent). */
+  seedArchive(): void {
+    try {
+      const s = this.get();
+      if (s) this.saveArchive(s);
+    } catch (e) {
+      log.warn('schedule archive seed failed', errInfo(e));
+    }
+  }
+
   // Address search for the owner's settings (kept here so the bot never talks to YASNO directly).
   searchStreets(query: string) {
     return this.client.streets(query);
@@ -102,9 +124,15 @@ export class ScheduleService {
       if (!a) return 'no-address';
       try {
         a = await this.recheckGroup(a, false);
+        if (this.notices().addressGone) this.repo.setKv(K.notices, { ...this.notices(), addressGone: undefined });
       } catch (e) {
         // The daily group check must not block the schedule itself; retried next poll.
         log.warn('schedule group recheck failed', errInfo(e));
+        // YASNO renumbers streets/houses now and then: the stored ids stop resolving. Tell the owner once.
+        if (/HTTP 404/.test(errInfo(e).error) && !this.notices().addressGone) {
+          this.repo.setKv(K.notices, { ...this.notices(), addressGone: true });
+          this.notifyAdmin((t) => ({ text: t.schedule.addressGone(esc(a!.street), esc(a!.house)), silent: false }));
+        }
       }
       let s: Schedule;
       try {
@@ -116,6 +144,7 @@ export class ScheduleService {
         s = await this.client.planned(a.group);
       }
       this.repo.setKv(K.last, s);
+      this.saveArchive(s);
       if (this.notices().format) this.repo.setKv(K.notices, { ...this.notices(), format: undefined }); // recovered
       this.noticeUnknownTypes(s.unknownTypes);
       return 'ok';
@@ -129,8 +158,20 @@ export class ScheduleService {
   /** Re-resolves address → group once a day (or now when forced); switches and tells the admin on change. */
   private async recheckGroup(a: StoredAddress, force: boolean): Promise<StoredAddress> {
     if (!force && Date.now() - a.resolvedAt < DAY) return a;
-    const group = await this.client.group(a.streetId, a.houseId);
-    const next = { ...a, group, resolvedAt: Date.now() };
+    let ids = { streetId: a.streetId, houseId: a.houseId };
+    let group: string;
+    try {
+      group = await this.client.group(ids.streetId, ids.houseId);
+    } catch (e) {
+      // YASNO renumbers streets/houses now and then: find the same address by its names.
+      if (!/HTTP 404/.test(errInfo(e).error)) throw e;
+      const found = await this.relocate(a).catch(() => null);
+      if (!found) throw e;
+      ids = found;
+      group = await this.client.group(ids.streetId, ids.houseId);
+      log.info('schedule address ids updated', { from: [a.streetId, a.houseId], to: [ids.streetId, ids.houseId] });
+    }
+    const next = { ...a, ...ids, group, resolvedAt: Date.now() };
     const now = this.stored();
     // The owner may have picked another address meanwhile: don't write the old one back.
     if (!now || now.streetId !== a.streetId || now.houseId !== a.houseId) return now ?? a;
@@ -140,6 +181,15 @@ export class ScheduleService {
       this.notifyAdmin((t) => ({ text: t.schedule.groupChanged(a.group, group), silent: false }));
     }
     return next;
+  }
+
+  /** The stored street and house looked up again by name (exact match, case and spaces ignored). */
+  private async relocate(a: Address): Promise<{ streetId: number; houseId: number } | null> {
+    const same = (x: string, y: string) => x.replace(/\s+/g, '').toLowerCase() === y.replace(/\s+/g, '').toLowerCase();
+    const street = (await this.client.streets(a.street)).find((o) => same(o.name, a.street));
+    if (!street) return null;
+    const house = (await this.client.houses(street.id, a.house)).find((o) => same(o.name, a.house));
+    return house ? { streetId: street.id, houseId: house.id } : null;
   }
 
   private notices(): Notices {

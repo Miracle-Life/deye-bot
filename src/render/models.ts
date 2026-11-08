@@ -1,6 +1,6 @@
 // Pure view-models for the image cards: what to show, already formatted.
 import { DateTime } from 'luxon';
-import { fmtApprox, fmtDuration, fmtPower, fmtTime, type PanelCtx } from '../bot/format.js';
+import { fmtApprox, fmtDuration, fmtKw, fmtKwMax, fmtPower, fmtTime, type PanelCtx } from '../bot/format.js';
 import type { Dict } from '../i18n/index.js';
 import { batteryVerdict, socAt, type TileState } from '../schedule/logic.js';
 import type { Schedule } from '../schedule/model.js';
@@ -9,7 +9,7 @@ import type { Interval, Reading } from '../deye/types.js';
 import { runtimeHours, timeToFullMin } from '../domain/forecast.js';
 import type { EnergyDay, MonthSummary, Tariff } from '../domain/energy.js';
 import type { Segment, Summary } from '../domain/stats.js';
-import { BATTERY_BANDS, batteryLimitW, batteryZone, BREAKER_W, gridLoad, loadZone, NOMINAL_BATTERY_V, ORANGE_FROM_W, YELLOW_FROM_W, type LoadZone } from '../domain/load.js';
+import { batteryBands, batteryScaleW, batteryZone, GRID_ORANGE_W, GRID_YELLOW_W, gridChargeW, gridLoad, gridScaleW, loadZone, batteryV, type LoadZone } from '../domain/load.js';
 
 export type Tone = 'green' | 'red' | 'amber' | 'plain' | 'muted';
 export type Icon = 'home' | 'sun' | 'grid' | 'battery' | 'moon' | 'calendar';
@@ -44,7 +44,7 @@ export interface LoadBlock {
   scale: { yellow: number; orange: number; red: number }; // bar fractions where each zone starts
   homeFrac: number; // of the bar's full scale
   batteryFrac: number;
-  legend: { home: string; battery: string | null; limit: string | null };
+  legend: { home: { label: string; kw: string }; battery: { label: string; kw: string } | null; limit: string | null };
 }
 
 export interface ScheduleTile {
@@ -57,6 +57,7 @@ export interface ScheduleTile {
 export interface Stat {
   label: string;
   value: string;
+  sub?: string; // grey addition after the value, e.g. "(32)"
   tone: Tone;
 }
 
@@ -94,50 +95,50 @@ function split(w: number | null, t: Dict): { value: string; unit: string } {
 
 const load = (r: Reading) => r.upsLoadPowerW ?? r.loadPowerW;
 const cap = (r: Reading, cfg: Config) => r.batteryCapacityKwh ?? cfg.batteryCapacityKwh;
-const kw1 = (w: number) => (w / 1000).toFixed(1);
 
-const frac = (w: number, of: number) => Math.round((Math.min(Math.max(w, 0), of) / of) * 10_000) / 10_000;
+const frac = (w: number, of: number) => (of > 0 ? Math.round((Math.min(Math.max(w, 0), of) / of) * 10_000) / 10_000 : 0);
 
-function gridBlock(r: Reading, chargeA: number | null, cfg: Config, t: Dict): LoadBlock | null {
+function gridBlock(r: Reading, cfg: Config, t: Dict): LoadBlock | null {
   const l = gridLoad(r);
   if (!l) return null;
-  const homeFrac = frac(l.homeW, BREAKER_W);
-  const limitKw = chargeA === null ? null : kw1(chargeA * (r.batteryVoltage ?? NOMINAL_BATTERY_V));
-  const red = frac(cfg.gridLoadMaxKw * 1000, BREAKER_W);
+  const scaleW = gridScaleW(r.ratedPowerW);
+  const redW = cfg.gridLoadMaxKw * 1000;
+  const homeFrac = frac(l.homeW, scaleW);
+  const red = frac(redW, scaleW);
   return {
     label: t.card.fromGrid,
-    value: kw1(l.totalW),
-    max: `${BREAKER_W / 1000} ${t.units.kw}`,
-    zone: loadZone(l.totalW, cfg.gridLoadMaxKw * 1000),
-    scale: { yellow: Math.min(frac(YELLOW_FROM_W, BREAKER_W), red), orange: Math.min(frac(ORANGE_FROM_W, BREAKER_W), red), red },
+    value: fmtKw(l.totalW),
+    max: `${fmtKwMax(scaleW)} ${t.units.kw}`,
+    zone: loadZone(l.totalW, redW),
+    scale: { yellow: Math.min(frac(GRID_YELLOW_W, scaleW), red), orange: Math.min(frac(GRID_ORANGE_W, scaleW), red), red },
     homeFrac,
-    batteryFrac: Math.min(frac(l.batteryW, BREAKER_W), 1 - homeFrac),
+    batteryFrac: Math.min(frac(l.batteryW, scaleW), 1 - homeFrac),
     legend: {
-      home: t.card.loadHome(kw1(l.homeW)),
-      battery: t.card.loadBatteries(kw1(l.batteryW)),
-      limit: limitKw === null || chargeA === null ? null : t.card.chargeLimit(chargeA, limitKw),
+      home: { label: t.card.loadHome, kw: fmtKw(l.homeW) },
+      battery: { label: t.card.loadBatteries, kw: fmtKw(l.batteryW) },
+      limit: t.card.chargeLimit(cfg.gridChargeA, fmtKw(gridChargeW(cfg.gridChargeA, batteryV(r.batteryVoltage)))),
     },
   };
 }
 
-/** During an outage: house draw against what the inverter and batteries can give. */
-function batteryBlock(r: Reading, dischargeA: number | null, t: Dict): LoadBlock | null {
+/** During an outage: house draw against what the inverter can give from the batteries. */
+function batteryBlock(r: Reading, dischargeA: number | null, cfg: Config, t: Dict): LoadBlock | null {
   const w = load(r);
-  const limitW = batteryLimitW(dischargeA, r.batteryVoltage ?? NOMINAL_BATTERY_V, r.ratedPowerW);
-  if (w === null || limitW === null) return null;
-  const limitKw = kw1(limitW);
+  if (w === null) return null;
+  const scaleW = batteryScaleW(dischargeA, batteryV(r.batteryVoltage), r.ratedPowerW);
+  const redW = cfg.batteryLoadMaxKw * 1000;
   return {
     label: t.card.fromBatteries,
-    value: kw1(w),
-    max: `${limitKw} ${t.units.kw}`,
-    zone: batteryZone(w, limitW),
-    scale: BATTERY_BANDS,
-    homeFrac: frac(w, limitW),
+    value: fmtKw(w),
+    max: `${fmtKwMax(scaleW)} ${t.units.kw}`,
+    zone: batteryZone(w, scaleW, redW),
+    scale: batteryBands(scaleW, redW),
+    homeFrac: frac(w, scaleW),
     batteryFrac: 0,
     legend: {
-      home: t.card.loadHome(kw1(w)),
+      home: { label: t.card.loadHome, kw: fmtKw(w) },
       battery: null,
-      limit: t.card.dischargeLimit(dischargeA, kw1(dischargeA === null ? limitW : Math.round(dischargeA * (r.batteryVoltage ?? NOMINAL_BATTERY_V))), r.ratedPowerW === null ? null : String(Math.round(r.ratedPowerW / 100) / 10)),
+      limit: t.card.dischargeLimit(dischargeA, fmtKwMax(scaleW), r.ratedPowerW === null ? null : fmtKwMax(r.ratedPowerW)),
     },
   };
 }
@@ -198,9 +199,15 @@ export function scheduleTile(c: PanelCtx, cfg: Config, t: Dict): ScheduleTile | 
       tone = 'muted';
       break;
     case 'on-in-slot':
-      title = k.inSlot(fmtTime(st.from, z));
-      tone = 'amber';
-      lines.push({ text: k.inSlotNote(endTime(st.until, z)), tone: 'muted' });
+      if (st.early) {
+        title = k.backEarly;
+        tone = 'green';
+        lines.push({ text: k.backEarlyNote(endTime(st.until, z)), tone: 'amber' });
+      } else {
+        title = k.inSlot(fmtTime(st.from, z));
+        tone = 'amber';
+        lines.push({ text: k.inSlotNote(endTime(st.until, z)), tone: 'muted' });
+      }
       break;
     case 'next': {
       title = k.next(when(st.start), inDur(st.start));
@@ -217,6 +224,14 @@ export function scheduleTile(c: PanelCtx, cfg: Config, t: Dict): ScheduleTile | 
   }
   if (c.schedule.stale) lines.push({ text: k.stale(fmtTime(c.schedule.fetchedAt, z)), tone: 'amber' });
   return { label: k.label, title, tone, lines };
+}
+
+const WAS_OFF_SHOWN_MS = 60 * 60_000;
+
+/** First hour after the power is back: how long it was off. */
+function wasOff(c: PanelCtx, t: Dict): string {
+  if (c.lastOnTs === null || c.lastOutageStartTs == null || c.nowMs - c.lastOnTs >= WAS_OFF_SHOWN_MS) return '';
+  return t.panel.wasOffFor(fmtDuration(c.lastOnTs - c.lastOutageStartTs, t));
 }
 
 export function panelModel(c: PanelCtx, cfg: Config, t: Dict): PanelModel {
@@ -278,7 +293,7 @@ export function panelModel(c: PanelCtx, cfg: Config, t: Dict): PanelModel {
     g === 'off'
       ? `${t.panel.powerOff}${c.outageStartTs !== null ? k.captionOffSince(fmtTime(c.outageStartTs, z)) : ''}`
       : g === 'on'
-        ? `${t.panel.powerOn}${charging ? t.panel.batteriesCharging : ''}`
+        ? `${t.panel.powerOn}${wasOff(c, t)}${charging ? t.panel.batteriesCharging : ''}`
         : t.panel.gridUnknown;
   if (stale) caption += `\n⚠️ ${stale}`;
 
@@ -291,7 +306,7 @@ export function panelModel(c: PanelCtx, cfg: Config, t: Dict): PanelModel {
     flow,
     eta,
     schedule: scheduleTile(c, cfg, t),
-    load: !r ? null : g === 'off' ? batteryBlock(r, c.limits?.dischargeA ?? null, t) : gridBlock(r, c.limits?.chargeA ?? null, cfg, t),
+    load: !r ? null : g === 'off' ? batteryBlock(r, c.limits?.dischargeA ?? null, cfg, t) : gridBlock(r, cfg, t),
     tiles,
     caption,
   };

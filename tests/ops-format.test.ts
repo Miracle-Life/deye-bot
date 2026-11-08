@@ -46,18 +46,39 @@ describe('renderWatch: night warning at the reserve', () => {
 });
 
 describe('renderWatch: grid load', () => {
-  it('loud alert with the split and the breaker', () => {
-    const m = renderWatch({ type: 'grid_high', load: { totalW: 7300, homeW: 3100, batteryW: 4200 }, limitW: 7000 }, Z, dicts.ru);
+  it('loud alert with the split, threshold and scale', () => {
+    const m = renderWatch({ type: 'grid_high', load: { totalW: 7300, homeW: 3100, batteryW: 4200 }, limitW: 7000, scaleW: 10_000 }, Z, dicts.ru);
     expect(m.silent).toBe(false);
-    expect(m.text).toContain('Из сети 7.3 кВт');
-    expect(m.text).toContain('дом 3.1 + батареи 4.2');
-    expect(m.text).toContain('автомат ~8 кВт');
+    expect(m.text).toContain('Из сети 7.30 кВт');
+    expect(m.text).toContain('дом 3.10 + батареи 4.20');
+    expect(m.text).toContain('порог 7 кВт · максимум 10 кВт');
+    expect(m.text).not.toContain('автомат');
   });
 
   it('quiet all-clear', () => {
     const m = renderWatch({ type: 'grid_ok', totalW: 6200 }, Z, dicts.ru);
     expect(m.silent).toBe(true);
-    expect(m.text).toContain('Нагрузка в норме · 6.2 кВт');
+    expect(m.text).toContain('Нагрузка в норме · 6.20 кВт');
+  });
+});
+
+describe('renderWatch: battery load', () => {
+  it('loud alert with threshold and what the inverter can give', () => {
+    const m = renderWatch({ type: 'battery_high', loadW: 7120, limitW: 7000, scaleW: 8510 }, Z, dicts.uk);
+    expect(m.silent).toBe(false);
+    expect(m.text).toContain('Від батарей 7.12 кВт');
+    expect(m.text).toContain('поріг 7 кВт');
+    expect(m.text).toContain('≈ 8.51 кВт');
+  });
+
+  it('whole-kW scale reads "10", like the bar', () => {
+    expect(renderWatch({ type: 'battery_high', loadW: 7120, limitW: 7000, scaleW: 10_000 }, Z, dicts.uk).text).toContain('≈ 10 кВт');
+  });
+
+  it('quiet all-clear', () => {
+    const m = renderWatch({ type: 'battery_ok', loadW: 6300 }, Z, dicts.en);
+    expect(m.silent).toBe(true);
+    expect(m.text).toContain('6.30 kW');
   });
 });
 

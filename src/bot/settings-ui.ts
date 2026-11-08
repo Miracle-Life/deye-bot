@@ -1,5 +1,6 @@
 // Owner settings menu: text + inline keyboards built from the settings registry.
 import { InlineKeyboard } from 'grammy';
+import { withHome } from './keyboards.js';
 import { FIELDS, fieldText, fieldTexts, SECTIONS, unitText, type Field, type SettingsStore } from '../settings.js';
 import type { Dict } from '../i18n/index.js';
 
@@ -25,7 +26,7 @@ export function homeView(s: SettingsStore, t: Dict, address: string): View {
     kb.text(t.cfg.sections[sec], `cfg:s:${sec}`);
     if (i % 2 === 1) newRow(kb);
   });
-  newRow(kb).text(t.addr.button, 'adr:start').row().text(t.cfg.back, 'set:home');
+  withHome(newRow(kb).text(t.addr.button, 'adr:start').row().text(t.cfg.back, 'set:home'), t);
   return { text: lines.join('\n'), kb };
 }
 
@@ -34,7 +35,7 @@ export function sectionView(s: SettingsStore, id: string, t: Dict): View | null 
   if (!sec) return null;
   const kb = new InlineKeyboard();
   for (const f of fieldsOf(sec)) kb.text(`${fieldTexts(f, t).label}: ${val(s, f, t)}`, `cfg:f:${f.key}`).row();
-  kb.text(t.cfg.allSettings, 'cfg:home');
+  withHome(kb.text(t.cfg.allSettings, 'cfg:home'), t);
   return { text: `<b>${t.cfg.sections[sec]}</b>\n${t.cfg.pick}`, kb };
 }
 
@@ -68,6 +69,6 @@ export function fieldView(s: SettingsStore, f: Field, t: Dict, note?: string): V
     newRow(kb).text(t.cfg.customPrice, `cfg:i:${f.key}`).row();
   }
   if (JSON.stringify(cur) !== JSON.stringify(def)) kb.text(t.cfg.reset, `cfg:r:${f.key}`);
-  kb.text(t.cfg.back, `cfg:s:${f.section}`);
+  withHome(kb.text(t.cfg.back, `cfg:s:${f.section}`), t);
   return { text: lines.join('\n'), kb };
 }

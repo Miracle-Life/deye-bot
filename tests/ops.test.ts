@@ -1,6 +1,6 @@
 import { DateTime } from 'luxon';
 import { describe, expect, it } from 'vitest';
-import { ErrorDigest, initialCloud, isQuietHour, stepCloud } from '../src/domain/ops.js';
+import { ErrorDigest, initialCloud, isQuietHour, isStartupNetError, stepCloud } from '../src/domain/ops.js';
 
 const MIN = 60_000;
 
@@ -53,5 +53,18 @@ describe('isQuietHour', () => {
     expect(isQuietHour(at('2026-11-05T06:59'), 'Europe/Kyiv')).toBe(true);
     expect(isQuietHour(at('2026-11-05T07:00'), 'Europe/Kyiv')).toBe(false);
     expect(isQuietHour(at('2026-11-04T22:59'), 'Europe/Kyiv')).toBe(false);
+  });
+});
+
+describe('isStartupNetError', () => {
+  const dns = 'fetch failed: EAI_AGAIN getaddrinfo EAI_AGAIN eu1-developer.deyecloud.com';
+  it('network errors in the first 2 minutes are startup noise', () => {
+    expect(isStartupNetError(dns, 0, 30_000)).toBe(true);
+    expect(isStartupNetError('connect ECONNREFUSED 1.2.3.4:443', 0, 119_000)).toBe(true);
+  });
+
+  it('later or non-network errors still count', () => {
+    expect(isStartupNetError(dns, 0, 5 * 60_000)).toBe(false);
+    expect(isStartupNetError('Deye /device/latest: HTTP 500', 0, 30_000)).toBe(false);
   });
 });

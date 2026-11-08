@@ -20,8 +20,15 @@ describe('settings', () => {
   });
 
   it('grid-load threshold accepts only the offered values', () => {
-    expect(validValue('gridLoadMaxKw', 6.5)).toBe(true);
-    expect(validValue('gridLoadMaxKw', 8)).toBe(false);
+    expect(validValue('gridLoadMaxKw', 8.5)).toBe(true);
+    expect(validValue('gridLoadMaxKw', 6.5)).toBe(false);
+  });
+
+  it('load section: grid and battery thresholds, grid charge current', () => {
+    const f = (k: string) => FIELDS.find((x) => x.key === k)!;
+    expect(f('gridLoadMaxKw')).toMatchObject({ section: 'load', options: [7, 7.5, 8, 8.5, 9, 9.5], unit: 'kw' });
+    expect(f('batteryLoadMaxKw')).toMatchObject({ section: 'load', options: [6, 6.5, 7, 7.5, 8], unit: 'kw' });
+    expect(f('gridChargeA')).toMatchObject({ section: 'load', options: [40, 50, 60, 70, 80, 90, 100, 120, 150], unit: 'a' });
   });
 
   it('parses typed prices with comma or dot', () => {

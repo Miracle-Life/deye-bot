@@ -10,13 +10,15 @@ import { batteryModel, dayModel, moneyModel, panelModel, periodModel, scheduleMo
 import { toPng } from '../render/png.js';
 import type { Repo, UserRow } from '../storage/repo.js';
 import { esc, renderAccessRequest, renderPanel, type PanelCtx } from './format.js';
-import { accessKb, dayKb, leaveKb, moneyKb, nextReminderLead, panelKb as basePanelKb, periodKb, restartKb, scheduleKb, settingsKb, usersKb, type PeriodNav } from './keyboards.js';
+import { accessKb, addressPicks, archiveKb, dayKb, homeKb, leaveKb, moneyKb, nextReminderLead, panelKb as basePanelKb, periodKb, restartKb, scheduleKb, settingsKb, usersKb, type PeriodNav } from './keyboards.js';
 import { fieldView, homeView, sectionView, type View } from './settings-ui.js';
 import { monthSummary, splitDay, type EnergyDayRaw, type Tariff } from '../domain/energy.js';
 import type { EnergyService } from '../energy.js';
 import { FIELDS, fieldTexts, parsePrice, type SettingsStore, type Tunable } from '../settings.js';
 import { dicts, isLang, pickLang, type Dict, type Lang } from '../i18n/index.js';
+import { archiveNav, archiveStats, monthDates, quarterWeeks, resolveArchiveAnchor, weekDates, type ArchiveKind } from '../schedule/archive.js';
 import { isStale, tileState } from '../schedule/logic.js';
+import { monthArchiveModel, quarterArchiveModel, svgArchiveMonth, svgArchiveQuarter, svgArchiveWeek, weekArchiveModel } from '../render/archive.js';
 import type { ScheduleService } from '../schedule/service.js';
 import type { BatteryHealth } from '../battery-health.js';
 
@@ -37,6 +39,12 @@ export interface DeyeBot {
   panelPng(lang: Lang): Buffer | null;
   /** Re-renders panels users looked at recently. */
   refreshLive(): Promise<void>;
+  /** The panel exactly as /start shows it (notifications for outage start/end). Throws if rendering fails. */
+  panelCardFor(lang: Lang): { png: Buffer; caption: string; kb: InlineKeyboard };
+  /** Makes a sent message that chat's live panel. */
+  trackLive(chatId: number, messageId: number, lang: Lang): void;
+  /** Panel buttons, for notifications. */
+  panelKbFor(lang: Lang): InlineKeyboard;
 }
 
 /** Services provided by main. */
@@ -56,6 +64,17 @@ const REFRESH_WAIT_MS = 10_000;
 const hh = (h: number) => `${String(h).padStart(2, '0')}:00`;
 
 const notModified = (e: unknown) => e instanceof GrammyError && e.description.includes('message is not modified');
+
+/** Runs `fn` unless a previous run is still going (a slow Telegram must not stack refreshes). */
+export function oneAtATime(fn: () => Promise<void>): () => Promise<void> {
+  let running: Promise<void> | null = null;
+  return () => (running ??= fn().finally(() => (running = null)));
+}
+
+/** A notification may have become this chat's live panel while the old one was being edited: keep it. */
+export function dropLive(live: Map<number, { messageId: number }>, chatId: number, messageId: number): void {
+  if (live.get(chatId)?.messageId === messageId) live.delete(chatId);
+}
 
 export function createBot(cfg: Config, repo: Repo, poller: Poller, ops: BotOps): DeyeBot {
   // grammY's default 500 s API timeout could stall polling on a dead connection; stay above the 30 s long poll.
@@ -86,6 +105,8 @@ export function createBot(cfg: Config, repo: Repo, poller: Poller, ops: BotOps):
   const pendingInput = new Map<number, Pending & { until: number }>();
   // Names behind the street/house buttons (callback data only carries ids).
   const pickNames = new Map<string, string>();
+  // The owner's last YASNO search, for paging through more than 10 results.
+  let lastPicks: { kind: 'street' | 'house'; opts: { id: number; name: string }[] } | null = null;
   const addressLine = (t: Dict) => {
     const a = ops.schedule.address();
     return a ? t.addr.current(esc(a.street), esc(a.house), a.group) : t.addr.none;
@@ -98,7 +119,7 @@ export function createBot(cfg: Config, repo: Repo, poller: Poller, ops: BotOps):
 
   function scheduleCtx(nowMs: number): PanelCtx['schedule'] {
     const sch = ops.schedule.get();
-    const state = sch ? tileState(sch, poller.state.grid, nowMs, poller.state.outage?.startTs ?? null) : null;
+    const state = sch ? tileState(sch, poller.state.grid, nowMs, poller.state.outage?.startTs ?? null, repo.lastClosedOutage()?.end ?? null) : null;
     if (!sch || !state) return null;
     // Same 15-min average as the "may not last" warning, so the two agree.
     const d = repo
@@ -111,12 +132,14 @@ export function createBot(cfg: Config, repo: Repo, poller: Poller, ops: BotOps):
 
   function panelCtx(): PanelCtx {
     const s = poller.state;
+    const last = repo.lastClosedOutage();
     return {
       schedule: scheduleCtx(Date.now()),
       reading: repo.latestReading(),
       grid: s.grid === null ? null : { state: s.grid, missingPhases: s.outage?.missingPhases ?? [], ambiguous: false },
       outageStartTs: s.outage?.startTs ?? null,
-      lastOnTs: repo.lastClosedOutage()?.end ?? null,
+      lastOnTs: last?.end ?? null,
+      lastOutageStartTs: last?.start ?? null,
       nowMs: Date.now(),
       staleAfterMs: cfg.staleAfterMin * 60_000,
       limits: ops.batteryLimits(),
@@ -131,9 +154,34 @@ export function createBot(cfg: Config, repo: Repo, poller: Poller, ops: BotOps):
     if (!sch) return null;
     const now = Date.now();
     // Before the first poll there is no grid state yet; the card is about the schedule anyway.
-    const state = tileState(sch, poller.state.grid ?? 'on', now, poller.state.outage?.startTs ?? null)!;
+    const state = tileState(sch, poller.state.grid ?? 'on', now, poller.state.outage?.startTs ?? null, repo.lastClosedOutage()?.end ?? null)!;
     const m = scheduleModel(sch, state, isStale(sch, now), now, cfg, t);
     return { png: toPng(svgSchedule(m), CARD_W), caption: m.caption, kb: scheduleKb(t) };
+  }
+
+  /** Past schedules: week / month / 3 months. */
+  function archiveCard(kind: ArchiveKind, raw: string, t: Dict): Card {
+    const now = Date.now();
+    const oldest = repo.oldestScheduleDate();
+    const anchor = resolveArchiveAnchor(kind, raw, oldest, today(), z);
+    const weeks = kind === 'q' ? quarterWeeks(anchor, z) : null;
+    const dates = weeks ? weeks.flat() : kind === 'w' ? weekDates(anchor, z) : monthDates(anchor, z);
+    const archived = repo.scheduleDaysBetween(dates[0]!, dates.at(-1)!);
+    const from = dayRange(dates[0]!, z).from;
+    const to = dayRange(dates.at(-1)!, z).to;
+    const stats = archiveStats(dates, new Map(archived.map((d) => [d.date, d])), repo.outagesOverlapping(from, to), unknownIntervals(from, to, now), now, z, repo.earliestDataTs());
+    const group = archived.at(-1)?.group ?? ops.schedule.address()?.group ?? null;
+    const kb = archiveKb(kind, archiveNav(kind, anchor, oldest, today(), z), t);
+    if (kind === 'w') {
+      const m = weekArchiveModel(stats, group, now, cfg, t);
+      return { png: toPng(svgArchiveWeek(m), CARD_W), caption: m.caption, kb };
+    }
+    if (kind === 'm') {
+      const m = monthArchiveModel(stats, anchor, group, now, cfg, t);
+      return { png: toPng(svgArchiveMonth(m), CARD_W), caption: m.caption, kb };
+    }
+    const m = quarterArchiveModel(weeks!.map((_, i) => stats.slice(i * 7, i * 7 + 7)), group, now, cfg, t);
+    return { png: toPng(svgArchiveQuarter(m), CARD_W), caption: m.caption, kb };
   }
 
   function panelCard(t: Dict): Card {
@@ -149,7 +197,9 @@ export function createBot(cfg: Config, repo: Repo, poller: Poller, ops: BotOps):
     else if (live.get(chatId)?.messageId === messageId) live.delete(chatId);
   }
 
-  async function refreshLive(): Promise<void> {
+  const refreshLive = oneAtATime(refreshLiveOnce);
+
+  async function refreshLiveOnce(): Promise<void> {
     if (!live.size) return;
     const cards = new Map<Lang, Card>(); // render each language once per refresh
     for (const [chatId, p] of live) {
@@ -172,7 +222,7 @@ export function createBot(cfg: Config, repo: Repo, poller: Poller, ops: BotOps):
       } catch (e) {
         if (notModified(e)) continue;
         // Drop only when the message is gone or the user blocked us; keep it on 429 / network errors.
-        if (e instanceof GrammyError && e.error_code !== 429) live.delete(chatId);
+        if (e instanceof GrammyError && e.error_code !== 429) dropLive(live, chatId, p.messageId);
         log.warn('live panel refresh failed', errInfo(e));
       }
     }
@@ -463,7 +513,7 @@ export function createBot(cfg: Config, repo: Repo, poller: Poller, ops: BotOps):
     await ctx.replyWithPhoto(new InputFile(toPng(svgBattery(m), CARD_W), 'battery.png'), {
       caption: m.caption,
       parse_mode: 'HTML',
-      reply_markup: new InlineKeyboard().text('🏠', 'v:panel'),
+      reply_markup: homeKb(t),
     });
   });
 
@@ -477,7 +527,7 @@ export function createBot(cfg: Config, repo: Repo, poller: Poller, ops: BotOps):
 
   bot.command('status', async (ctx) => {
     if (!isAdmin(ctx.from!.id)) return;
-    await ctx.reply(ops.status(tCtx(ctx)), { parse_mode: 'HTML' });
+    await ctx.reply(ops.status(tCtx(ctx)), { parse_mode: 'HTML', reply_markup: homeKb(tCtx(ctx)) });
   });
 
   bot.command('restart', async (ctx) => {
@@ -554,8 +604,6 @@ export function createBot(cfg: Config, repo: Repo, poller: Poller, ops: BotOps):
     }
   }
 
-  const MAX_PICKS = 10;
-
   /** Owner typed a street or a house number: offer matches as buttons. */
   async function addressInput(ctx: Context, p: Pending, text: string, t: Dict): Promise<void> {
     let opts: { id: number; name: string }[];
@@ -566,13 +614,10 @@ export function createBot(cfg: Config, repo: Repo, poller: Poller, ops: BotOps):
       return void (await ctx.reply(t.addr.failed));
     }
     if (!opts.length) return void (await ctx.reply(t.addr.notFound));
-    const kb = new InlineKeyboard();
-    for (const o of opts.slice(0, MAX_PICKS)) {
-      const data = p.kind === 'street' ? `adr:st:${o.id}` : `adr:h:${o.id}`;
-      pickNames.set(data, o.name);
-      kb.text(o.name, data).row();
-    }
-    await ctx.reply(p.kind === 'street' ? t.addr.pickStreet : t.addr.pickHouse, { reply_markup: kb });
+    lastPicks = { kind: p.kind === 'street' ? 'street' : 'house', opts };
+    const picks = addressPicks(opts, lastPicks.kind, t);
+    for (const [k, v] of picks.names) pickNames.set(k, v);
+    await ctx.reply(picks.text, { reply_markup: picks.kb });
   }
 
   async function addressCallback(ctx: Context, a: string | undefined, b: string | undefined, t: Dict): Promise<string | undefined> {
@@ -581,6 +626,12 @@ export function createBot(cfg: Config, repo: Repo, poller: Poller, ops: BotOps):
     if (a === 'start') {
       pendingInput.set(id, { kind: 'street', until });
       await ctx.reply(t.addr.askStreet);
+      return;
+    }
+    if (a === 'pg' && b && lastPicks) {
+      const picks = addressPicks(lastPicks.opts, lastPicks.kind, t, Number(b));
+      for (const [k, v] of picks.names) pickNames.set(k, v);
+      await edit(ctx, picks.text, picks.kb);
       return;
     }
     if (a === 'st' && b) {
@@ -634,6 +685,9 @@ export function createBot(cfg: Config, repo: Repo, poller: Poller, ops: BotOps):
           if (ops.schedule.get()) await showCard(ctx, (tt) => scheduleCard(tt)!);
           else toast = t.schedule.noData;
         }
+      } else if (kind === 'sa' && (a === 'w' || a === 'm' || a === 'q')) {
+        if (!ops.schedule.address()) toast = t.schedule.noAddress.slice(0, 60);
+        else await showCard(ctx, (tt) => archiveCard(a, b ?? 'now', tt));
       } else if (kind === 'e') {
         const m = a === 'now' || !a ? thisMonth() : a;
         if (!ops.energy.cached(m)) toast = t.bot.countingMoney;
@@ -745,6 +799,9 @@ export function createBot(cfg: Config, repo: Repo, poller: Poller, ops: BotOps):
       }
     },
     refreshLive,
+    panelCardFor: (lang) => panelCard(dicts[lang]),
+    trackLive: (chatId, messageId, lang) => track(chatId, messageId, true, lang),
+    panelKbFor: (lang) => panelKb(dicts[lang]),
   };
 }
 

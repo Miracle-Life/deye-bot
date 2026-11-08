@@ -1,3 +1,4 @@
+import { InlineKeyboard } from 'grammy';
 import { describe, expect, it } from 'vitest';
 import { broadcast, type SendApi } from '../src/bot/notifier.js';
 import { heartbeatPayload, pollerAlive } from '../src/heartbeat.js';
@@ -7,20 +8,26 @@ const user = (tgId: number, muted = false, nightQuiet = false): UserRow => ({ tg
 
 function fakeApi(fail: Record<number, unknown> = {}, photoFails = false) {
   const calls: { chatId: number; silent: boolean; photo?: string }[] = [];
+  const texts: string[] = [];
+  const markups: unknown[] = [];
+  let nextId = 100;
   const api: SendApi = {
-    async sendMessage(chatId, _text, opts) {
+    async sendMessage(chatId, text, opts) {
       if (fail[chatId]) throw fail[chatId];
       calls.push({ chatId, silent: opts.disable_notification });
-      return {};
+      texts.push(text);
+      markups.push(opts.reply_markup);
+      return { message_id: nextId++ };
     },
     async sendPhoto(chatId, photo, opts) {
       if (fail[chatId]) throw fail[chatId];
       if (photoFails) throw { error_code: 400, description: 'Bad Request: IMAGE_PROCESS_FAILED' };
       calls.push({ chatId, silent: opts.disable_notification, photo: typeof photo === 'string' ? photo : 'upload' });
-      return { photo: [{ file_id: 'small' }, { file_id: 'big' }] };
+      markups.push(opts.reply_markup);
+      return { message_id: nextId++, photo: [{ file_id: 'small' }, { file_id: 'big' }] };
     },
   };
-  return { api, calls };
+  return { api, calls, markups, texts };
 }
 
 describe('broadcast', () => {
@@ -62,6 +69,27 @@ describe('broadcast', () => {
     const res = await broadcast(api, [user(1)], { text: 'x', silent: false, photo: Buffer.from('png') }, () => {});
     expect(res).toEqual({ sent: 1, failed: 0 });
     expect(calls).toEqual([{ chatId: 1, silent: false }]);
+  });
+});
+
+describe('broadcast with the panel keyboard', () => {
+  const kb = new InlineKeyboard().text('🔄', 'r:panel');
+
+  it('attaches the keyboard to the photo and reports the sent message', async () => {
+    const { api, markups } = fakeApi();
+    const sent: [number, number, boolean][] = [];
+    await broadcast(api, [user(1)], { text: 'cap', silent: false, photo: Buffer.from('png'), kb }, () => {}, false, (id, mid, asPhoto) => sent.push([id, mid, asPhoto]));
+    expect(markups).toEqual([kb]);
+    expect(sent).toEqual([[1, 100, true]]);
+  });
+
+  it('photo fallback keeps keyboard', async () => {
+    const { api, markups, texts } = fakeApi({}, true);
+    const sent: [number, number, boolean][] = [];
+    await broadcast(api, [user(1)], { text: 'cap', fallbackText: 'full event text', silent: false, photo: Buffer.from('png'), kb }, () => {}, false, (id, mid, asPhoto) => sent.push([id, mid, asPhoto]));
+    expect(markups).toEqual([kb]);
+    expect(texts).toEqual(['full event text']);
+    expect(sent).toEqual([[1, 100, false]]);
   });
 });
 

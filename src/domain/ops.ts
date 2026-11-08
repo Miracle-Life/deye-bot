@@ -29,6 +29,14 @@ export function stepCloud(s: CloudState, o: PollOutcome, nowMs: number, downAfte
   return { state, event: null };
 }
 
+export const STARTUP_GRACE_MS = 120_000;
+const NET_ERROR = /EAI_AGAIN|ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|fetch failed/i;
+
+/** Right after a (re)start the network may not be up yet (NAS boot, container update): not a bot error. */
+export function isStartupNetError(error: string, startedAtMs: number, nowMs: number): boolean {
+  return nowMs - startedAtMs < STARTUP_GRACE_MS && NET_ERROR.test(error);
+}
+
 /** First occurrence of an error goes out at once; repeats within the window are counted and summarized. */
 export class ErrorDigest {
   private seen = new Map<string, { since: number; repeats: number }>();

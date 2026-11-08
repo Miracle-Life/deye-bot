@@ -1,3 +1,4 @@
+import type { ArchivedDay } from '../schedule/archive.js';
 import type { Interval, Reading } from '../deye/types.js';
 import type { DetectorState } from '../domain/detector.js';
 import type { EnergyDayRaw } from '../domain/energy.js';
@@ -244,12 +245,35 @@ export class Repo {
     this.db.prepare('DELETE FROM users WHERE tg_id = ?').run(tgId);
   }
 
-  purgeOlderThan(cutoffMs: number): { readings: number; outages: number; gaps: number } {
+  /** cutoffDate: the cutoff's local date (schedule days are keyed by date). */
+  purgeOlderThan(cutoffMs: number, cutoffDate: string): { readings: number; outages: number; gaps: number; scheduleDays: number } {
     const n = (sql: string) => Number(this.db.prepare(sql).run(cutoffMs).changes);
     return {
       readings: n('DELETE FROM readings WHERE ts < ?'),
       outages: n('DELETE FROM outages WHERE end IS NOT NULL AND end < ?'),
       gaps: n('DELETE FROM gaps WHERE end < ?'),
+      scheduleDays: Number(this.db.prepare('DELETE FROM schedule_days WHERE date < ?').run(cutoffDate).changes),
     };
+  }
+
+  getScheduleDay(date: string): ArchivedDay | null {
+    const row = this.db.prepare('SELECT json FROM schedule_days WHERE date = ?').get(date) as Row | undefined;
+    return row ? (JSON.parse(row.json) as ArchivedDay) : null;
+  }
+
+  putScheduleDay(d: ArchivedDay): void {
+    this.db.prepare('INSERT INTO schedule_days (date, json) VALUES (?, ?) ON CONFLICT(date) DO UPDATE SET json = excluded.json').run(d.date, JSON.stringify(d));
+  }
+
+  /** Inclusive, oldest first. */
+  scheduleDaysBetween(fromDate: string, toDate: string): ArchivedDay[] {
+    return (this.db.prepare('SELECT json FROM schedule_days WHERE date >= ? AND date <= ? ORDER BY date').all(fromDate, toDate) as Row[]).map(
+      (r) => JSON.parse(r.json) as ArchivedDay,
+    );
+  }
+
+  oldestScheduleDate(): string | null {
+    const row = this.db.prepare('SELECT MIN(date) AS d FROM schedule_days').get() as Row;
+    return row.d === null ? null : String(row.d);
   }
 }

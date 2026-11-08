@@ -1,12 +1,29 @@
-// Grid draw vs the main breaker: what the house pulls from the grid and what it's made of.
+// Load against what the system can give: grid draw (house + charging) and, during an outage, the batteries.
 import type { Reading } from '../deye/types.js';
 
-export const BREAKER_W = 8000;
+export const DEFAULT_RATED_W = 10_000; // SUN-10K; used when the inverter doesn't report its rating
 export const LOAD_HYSTERESIS_W = 500;
 export const MIN_SHOWN_W = 50;
 export const NOMINAL_BATTERY_V = 51.2; // when the reading has no battery voltage
-export const YELLOW_FROM_W = 4000;
-export const ORANGE_FROM_W = 5500;
+
+/** Deye sometimes reports 0 V: treat anything ≤ 0 as unknown. */
+export const batteryV = (v: number | null) => (v !== null && v > 0 ? v : NOMINAL_BATTERY_V);
+export const GRID_YELLOW_W = 5000;
+export const GRID_ORANGE_W = 6500;
+// Full discharge current sags the battery ~3 % and the inverter is ~94 % efficient.
+export const BATTERY_DERATE = 0.89;
+
+const pos = (v: number | null) => (v !== null && v > 0 ? v : null); // 0 = not reported
+
+/** Bar scale with grid: the inverter's rating. */
+export function gridScaleW(ratedW: number | null): number {
+  return pos(ratedW) ?? DEFAULT_RATED_W;
+}
+
+/** What grid charging takes at the configured current (Batt set2 → Grid Charge; the cloud doesn't report it). */
+export function gridChargeW(gridChargeA: number, batteryV: number): number {
+  return Math.round(gridChargeA * batteryV);
+}
 
 export interface GridLoad {
   totalW: number;
@@ -25,9 +42,9 @@ export function gridLoad(r: Pick<Reading, 'gridPowerW' | 'batteryPowerW'>): Grid
 }
 
 export function loadZone(w: number, redFromW: number): LoadZone {
-  if (w >= Math.min(redFromW, BREAKER_W)) return 'red';
-  if (w >= ORANGE_FROM_W) return 'orange';
-  if (w >= YELLOW_FROM_W) return 'yellow';
+  if (w >= redFromW) return 'red';
+  if (w >= GRID_ORANGE_W) return 'orange';
+  if (w >= GRID_YELLOW_W) return 'yellow';
   return 'green';
 }
 
@@ -55,18 +72,49 @@ export function gridWatchStep(
 // Battery mode: the breaker doesn't matter, the inverter and the batteries' discharge current do.
 const BAT_YELLOW = 0.5;
 const BAT_ORANGE = 0.7;
-const BAT_RED = 0.9;
-export const BATTERY_BANDS = { yellow: BAT_YELLOW, orange: BAT_ORANGE, red: BAT_RED };
 
-export function batteryLimitW(dischargeA: number | null, batteryV: number, ratedW: number | null): number | null {
-  const pos = (v: number | null) => (v !== null && v > 0 ? v : null); // 0 = not reported
-  const byCurrent = pos(dischargeA === null ? null : Math.round(dischargeA * batteryV));
-  const rated = pos(ratedW);
-  if (byCurrent === null) return rated;
-  return rated === null ? byCurrent : Math.min(byCurrent, rated);
+/** What the inverter can give from the batteries: discharge current × voltage, derated, capped by its rating. */
+export function batteryScaleW(dischargeA: number | null, batteryV: number, ratedW: number | null): number {
+  const rated = pos(ratedW) ?? DEFAULT_RATED_W;
+  const a = pos(dischargeA);
+  return a === null ? rated : Math.min(rated, Math.round(a * batteryV * BATTERY_DERATE));
 }
 
-export function batteryZone(w: number, limitW: number): LoadZone {
-  const f = w / limitW;
-  return f >= BAT_RED ? 'red' : f >= BAT_ORANGE ? 'orange' : f >= BAT_YELLOW ? 'yellow' : 'green';
+/** Bar fractions where each zone starts; red from the alert threshold (or the scale end if it's above). */
+export function batteryBands(scaleW: number, redFromW: number): { yellow: number; orange: number; red: number } {
+  const red = Math.min(1, redFromW / scaleW);
+  return { yellow: Math.min(BAT_YELLOW, red), orange: Math.min(BAT_ORANGE, red), red };
+}
+
+/**
+ * Battery overload alert per reading. Grid back resets silently (mirror of gridWatchStep, which resets on an outage).
+ */
+export function batteryWatchStep(
+  high: boolean,
+  grid: 'on' | 'off' | null,
+  loadW: number | null,
+  thresholdW: number,
+): { high: boolean; event: 'high' | 'ok' | null } {
+  if (grid === 'on') return { high: false, event: null };
+  if (grid === null || loadW === null) return { high, event: null };
+  return stepGridLoad(high, Math.max(loadW, 0), thresholdW);
+}
+
+export const BATTERY_ALERT_GAP_MS = 15 * 60_000;
+export interface BatteryAlertState {
+  alertedAt: number | null; // last overload alert actually sent
+  alerted: boolean; // the current overload was announced (so its all-clear is too)
+}
+
+/** Everyone gets this alert: at most one per 15 min when the load keeps crossing the threshold. */
+export function batteryAlertGate(s: BatteryAlertState, event: 'high' | 'ok', nowMs: number): { send: boolean; state: BatteryAlertState } {
+  if (event === 'ok') return { send: s.alerted, state: { ...s, alerted: false } };
+  if (s.alertedAt !== null && nowMs - s.alertedAt < BATTERY_ALERT_GAP_MS) return { send: false, state: { ...s, alerted: false } };
+  return { send: true, state: { alertedAt: nowMs, alerted: true } };
+}
+
+export function batteryZone(w: number, scaleW: number, redFromW: number): LoadZone {
+  const b = batteryBands(scaleW, redFromW);
+  const f = w / scaleW;
+  return f >= b.red ? 'red' : f >= b.orange ? 'orange' : f >= b.yellow ? 'yellow' : 'green';
 }

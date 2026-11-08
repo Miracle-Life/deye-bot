@@ -59,7 +59,14 @@ describe('tileState', () => {
   });
 
   it('on inside a scheduled outage', () => {
-    expect(tileState(sched([[10, 20]]), 'on', at(`${T}T10:05`))).toEqual({ kind: 'on-in-slot', from: at(`${T}T10:00`), until: at(`${T}T20:00`) });
+    expect(tileState(sched([[10, 20]]), 'on', at(`${T}T10:05`))).toEqual({ kind: 'on-in-slot', from: at(`${T}T10:00`), until: at(`${T}T20:00`), early: false });
+  });
+
+  it('on inside a scheduled outage after the power came back early', () => {
+    const s = sched([[10, 20]]);
+    expect(tileState(s, 'on', at(`${T}T16:05`), null, at(`${T}T16:00`))).toMatchObject({ kind: 'on-in-slot', early: true });
+    // The last outage ended before this slot began: the slot just hasn't started for us yet.
+    expect(tileState(s, 'on', at(`${T}T10:05`), null, at(`${T}T09:00`))).toMatchObject({ kind: 'on-in-slot', early: false });
   });
 
   it('on: next outage, end merged across midnight', () => {

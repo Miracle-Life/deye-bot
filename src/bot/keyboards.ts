@@ -11,13 +11,57 @@ export function panelKb(t: Dict, schedule = false): InlineKeyboard {
   return kb.text(t.kb.refresh, 'r:panel');
 }
 
+/** Every screen but the panel ends with a full-width "🏠 Home" row that opens the /start panel. */
+export function withHome(kb: InlineKeyboard, t: Dict): InlineKeyboard {
+  const last = kb.inline_keyboard.at(-1);
+  if (!last || last.length) kb.row(); // InlineKeyboard.from([]) has no row at all
+  return kb.text(t.kb.home, 'v:panel');
+}
+
+export const homeKb = (t: Dict) => withHome(new InlineKeyboard(), t);
+
+const archiveRow = (kb: InlineKeyboard, t: Dict) => kb.text(t.kb.archWeek, 'sa:w:now').text(t.kb.archMonth, 'sa:m:now').text(t.kb.archQuarter, 'sa:q:now');
+
+const MAX_PICKS = 10;
+
+/** YASNO search results as buttons, 10 per page with ‹ › (adr:pg:<page>); says where you are in the list. */
+export function addressPicks(
+  opts: { id: number; name: string }[],
+  kind: 'street' | 'house',
+  t: Dict,
+  page = 0,
+): { text: string; kb: InlineKeyboard; names: Map<string, string> } {
+  const pages = Math.max(1, Math.ceil(opts.length / MAX_PICKS));
+  const p = Math.min(Math.max(0, Math.floor(page)), pages - 1);
+  const shown = opts.slice(p * MAX_PICKS, (p + 1) * MAX_PICKS);
+  const kb = new InlineKeyboard();
+  const names = new Map<string, string>();
+  for (const o of shown) {
+    const data = kind === 'street' ? `adr:st:${o.id}` : `adr:h:${o.id}`;
+    names.set(data, o.name);
+    kb.text(o.name, data).row();
+  }
+  if (p > 0) kb.text(t.kb.pagePrev, `adr:pg:${p - 1}`);
+  if (p < pages - 1) kb.text(t.kb.pageNext, `adr:pg:${p + 1}`);
+  const head = kind === 'street' ? t.addr.pickStreet : t.addr.pickHouse;
+  if (pages === 1) return { text: head, kb, names };
+  const range = [p * MAX_PICKS + 1, p * MAX_PICKS + shown.length, opts.length] as const;
+  return { text: `${head}\n${kind === 'street' ? t.addr.moreStreets(...range) : t.addr.moreHouses(...range)}`, kb, names };
+}
+
 export function scheduleKb(t: Dict): InlineKeyboard {
-  return new InlineKeyboard().text(t.kb.refresh, 'sch:refresh').text('🏠', 'v:panel');
+  return withHome(archiveRow(new InlineKeyboard().text(t.kb.refresh, 'sch:refresh').row(), t), t);
+}
+
+/** Past schedules: ‹ › by period, then the periods, then home. */
+export function archiveKb(kind: 'w' | 'm' | 'q', nav: PeriodNav, t: Dict): InlineKeyboard {
+  const [prev, next] = kind === 'w' ? [t.kb.prevWeek, t.kb.nextWeek] : kind === 'm' ? [t.kb.prevMonth, t.kb.nextMonth] : [t.kb.earlier, t.kb.later];
+  return withHome(archiveRow(navRow(new InlineKeyboard(), nav, prev, next), t), t);
 }
 
 export function moneyKb(nav: PeriodNav, t: Dict): InlineKeyboard {
   const kb = navRow(new InlineKeyboard(), nav, t.kb.prevMonth, t.kb.nextMonth);
-  return kb.text(t.kb.stats, 's:d:today').text('🏠', 'v:panel');
+  return withHome(kb.text(t.kb.stats, 's:d:today'), t);
 }
 
 export interface PeriodNav {
@@ -34,7 +78,7 @@ function navRow(kb: InlineKeyboard, nav: PeriodNav, prevLabel: string, nextLabel
 export function dayKb(dateIso: string, nav: PeriodNav, zone: string, t: Dict): InlineKeyboard {
   const d = DateTime.fromISO(dateIso, { zone }).setLocale(t.locale);
   const kb = navRow(new InlineKeyboard(), nav, `‹ ${d.minus({ days: 1 }).toFormat('d MMM')}`, `${d.plus({ days: 1 }).toFormat('d MMM')} ›`);
-  return kb.text(t.kb.week, `s:w:${dateIso}`).text(t.kb.month, `s:m:${dateIso.slice(0, 7)}`).text('🏠', 'v:panel');
+  return withHome(kb.text(t.kb.week, `s:w:${dateIso}`).text(t.kb.month, `s:m:${dateIso.slice(0, 7)}`), t);
 }
 
 export function periodKb(kind: 'w' | 'm', anchorIso: string, nav: PeriodNav, t: Dict): InlineKeyboard {
@@ -43,7 +87,7 @@ export function periodKb(kind: 'w' | 'm', anchorIso: string, nav: PeriodNav, t: 
   kb.text(t.kb.day, `s:d:${day}`);
   if (kind === 'w') kb.text(t.kb.month, `s:m:${anchorIso.slice(0, 7)}`);
   else kb.text(t.kb.week, `s:w:${day}`);
-  return kb.text('🏠', 'v:panel');
+  return withHome(kb, t);
 }
 
 export function accessKb(tgId: number, t: Dict): InlineKeyboard {
@@ -52,7 +96,7 @@ export function accessKb(tgId: number, t: Dict): InlineKeyboard {
 
 export function usersKb(users: UserRow[], adminId: number, t: Dict): InlineKeyboard {
   // One button per row, no trailing empty row.
-  return InlineKeyboard.from(users.filter((u) => u.tgId !== adminId).map((u) => [InlineKeyboard.text(t.kb.remove(u.name), `u:del:${u.tgId}`)]));
+  return withHome(InlineKeyboard.from(users.filter((u) => u.tgId !== adminId).map((u) => [InlineKeyboard.text(t.kb.remove(u.name), `u:del:${u.tgId}`)])), t);
 }
 
 const REMINDER_LEADS = [0, 15, 30, 60];
@@ -80,7 +124,7 @@ export function settingsKb(
   if (watchdog !== null) kb.row().text(watchdog ? t.kb.watchOff : t.kb.watchOn, 'set:watch');
   if (reminders) kb.row().text(t.kb.remindOff(reminders.off), 'set:rem:off').row().text(t.kb.remindOn(reminders.on), 'set:rem:on');
   // The owner can't leave: the bot would be left without an admin.
-  return admin ? kb.row().text(t.kb.botSettings, 'cfg:home') : kb.row().text(t.kb.leave, 'set:leave');
+  return withHome(admin ? kb.row().text(t.kb.botSettings, 'cfg:home') : kb.row().text(t.kb.leave, 'set:leave'), t);
 }
 
 export function leaveKb(t: Dict): InlineKeyboard {

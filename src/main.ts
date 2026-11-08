@@ -3,7 +3,7 @@ import { GrammyError } from 'grammy';
 import { broadcast } from './bot/notifier.js';
 import { createBot, setupCommands } from './bot/bot.js';
 import { dicts, LANGS } from './i18n/index.js';
-import { esc, renderEvent } from './bot/format.js';
+import { esc, eventMsg } from './bot/format.js';
 import { loadConfig } from './config.js';
 import { OfficialDeyeSource } from './deye/official.js';
 import type { DataSource } from './deye/types.js';
@@ -51,9 +51,9 @@ async function main(): Promise<void> {
   // Bot, poller and monitor reference each other; wire via late binding.
   let send: Send | null = null;
   let refreshPanels: (() => Promise<void>) | null = null;
-  const poller = new Poller(src, repo, cfg, async (e) => {
+  const poller = new Poller(src, repo, cfg, async (e, replayed) => {
     log.info('event', { type: e.type });
-    await send?.((t) => renderEvent(e, cfg, t), 'all');
+    await send?.((t) => eventMsg(e, cfg, t, replayed), 'all');
     // Open panels should show the "no fresh data" banner without a tap.
     if (e.type === 'data_stale') await refreshPanels?.();
   });
@@ -82,8 +82,9 @@ async function main(): Promise<void> {
   const backups = new Backups(cfg.dbPath, cfg.timezone, (render) => void send?.(render, 'admin'));
   const schedule = new ScheduleService(repo, new YasnoClient(), cfg.timezone, (render) => void send?.(render, 'admin'));
   const batteryLimits = new BatteryLimitsService(src);
-  const { bot, panelPng, refreshLive } = createBot(cfg, repo, poller, { status: (t) => monitor.status(t), restart: () => stop(0), settings, energy, watchdogEnabled: heartbeat.enabled, batteryLimits: () => batteryLimits.get(), schedule, battery });
+  const { bot, panelPng, refreshLive, panelCardFor, trackLive, panelKbFor } = createBot(cfg, repo, poller, { status: (t) => monitor.status(t), restart: () => stop(0), settings, energy, watchdogEnabled: heartbeat.enabled, batteryLimits: () => batteryLimits.get(), schedule, battery });
   refreshPanels = refreshLive;
+  monitor.limits = () => batteryLimits.get();
   poller.onPoll = (o) => monitor.onPoll(o);
   poller.onFresh = async (r) => {
     await monitor.onReading(r);
@@ -105,9 +106,24 @@ async function main(): Promise<void> {
       const group = users.filter((u) => u.lang === lang);
       if (!group.length) continue;
       const msg = render(dicts[lang]);
-      // Loud household events carry the panel picture; technical and quiet ones stay plain text.
-      const photo = who === 'all' && !msg.silent ? panelPng(lang) : null;
-      const res = await broadcast(bot.api, group, photo ? { ...msg, photo } : msg, markBlocked, quiet);
+      let res: { sent: number; failed: number };
+      if (msg.panel) {
+        // Outage start/end: the panel itself, with its buttons, kept live like a /start panel.
+        let card: ReturnType<typeof panelCardFor> | null = null;
+        try {
+          card = panelCardFor(lang);
+        } catch (e) {
+          log.error('panel render failed', errInfo(e));
+        }
+        res = card
+          ? await broadcast(bot.api, group, { text: card.caption, fallbackText: msg.text, silent: msg.silent, photo: card.png, kb: card.kb }, markBlocked, quiet, (id, mid, asPhoto) => asPhoto && trackLive(id, mid, lang))
+          : await broadcast(bot.api, group, { ...msg, kb: panelKbFor(lang) }, markBlocked, quiet);
+      } else {
+        // Loud household events carry the panel picture and buttons; technical and quiet ones stay plain text.
+        const loud = who === 'all' && !msg.silent;
+        const photo = loud ? panelPng(lang) : null;
+        res = await broadcast(bot.api, group, loud ? { ...msg, ...(photo ? { photo } : {}), kb: panelKbFor(lang) } : msg, markBlocked, quiet);
+      }
       total.sent += res.sent;
       total.failed += res.failed;
     }
@@ -123,6 +139,7 @@ async function main(): Promise<void> {
 
   monitor.start();
   heartbeat.start();
+  schedule.seedArchive(); // never throws: the archive must not stop the bot
   schedule.start();
   battery.start();
   backups.start();
@@ -134,7 +151,7 @@ async function main(): Promise<void> {
     const quiet = isQuietHour(Date.now(), cfg.timezone, cfg.quietFrom, cfg.quietTo);
     void schedule
       .tickReminders(repo.approvedUsers(), poller.state.grid, async (u, msg) => {
-        await broadcast(bot.api, [u], msg, markBlocked, quiet);
+        await broadcast(bot.api, [u], { ...msg, kb: panelKbFor(u.lang) }, markBlocked, quiet);
       })
       .catch((e) => log.warn('reminders failed', errInfo(e)));
   }, 60_000);

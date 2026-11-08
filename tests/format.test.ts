@@ -3,7 +3,7 @@ import { dicts } from '../src/i18n/index.js';
 import { describe, expect, it } from 'vitest';
 import { loadConfig } from '../src/config.js';
 import { emptyReading } from '../src/deye/types.js';
-import { fmtDuration, fmtPower, renderAccessRequest, renderDay, renderEvent, renderPanel, renderWeek, socBar } from '../src/bot/format.js';
+import { eventMsg, fmtDuration, fmtKw, fmtKwMax, fmtPower, renderAccessRequest, renderDay, renderEvent, renderPanel, renderWeek, socBar } from '../src/bot/format.js';
 
 const cfg = loadConfig({ TELEGRAM_TOKEN: 't', ADMIN_TELEGRAM_ID: '1', DEYE_APP_ID: 'a', DEYE_APP_SECRET: 's', DEYE_EMAIL: 'e', DEYE_PASSWORD: 'p' });
 const at = (iso: string) => DateTime.fromISO(iso, { zone: 'Europe/Kyiv' }).toMillis();
@@ -33,12 +33,47 @@ describe('format helpers', () => {
   });
 
   it('fmtPower switches to kW after rounding', () => {
-    expect(fmtPower(999.6, ru)).toBe('1.0 кВт');
+    expect(fmtPower(999.6, ru)).toBe('1.00 кВт');
     expect(fmtPower(999.4, ru)).toBe('999 Вт');
+  });
+
+  it('fmtPower shows kW with two decimals', () => {
+    const uk = dicts.uk;
+    const en = dicts.en;
+    expect(fmtPower(4250, uk)).toBe('4.25 кВт');
+    expect(fmtPower(999, uk)).toBe('999 Вт');
+    expect(fmtPower(1000, uk)).toBe('1.00 кВт');
+    expect(fmtPower(-3230, en)).toBe('3.23 kW');
+  });
+
+  it('fmtKwMax rounds before deciding on whole kW', () => {
+    expect(fmtKwMax(9996)).toBe('10');
+    expect(fmtKwMax(10004)).toBe('10');
+    expect(fmtKwMax(8507)).toBe('8.51');
+  });
+
+  it('fmtKw and fmtKwMax', () => {
+    expect(fmtKw(8432)).toBe('8.43');
+    expect(fmtKwMax(10000)).toBe('10');
+    expect(fmtKwMax(8470)).toBe('8.47');
   });
 });
 
 describe('renderEvent', () => {
+  it('only live outage events become the panel; missed-while-down ones keep their text', () => {
+    const ts = at('2026-11-04T12:30');
+    const e = { type: 'outage_started' as const, ts, approxFromTs: null, missingPhases: ['L1', 'L2', 'L3'], reading: reading(ts, 72, -274, 211) };
+    expect(eventMsg(e, cfg, ru, false).panel).toBe(true);
+    const old = eventMsg(e, cfg, ru, true);
+    expect(old.panel).toBeUndefined();
+    expect(old.text).toContain('<blockquote>');
+  });
+
+  it('outage start and end are delivered as the panel', () => {
+    const r = reading(at('2026-11-04T04:17'), 72, -274, 211);
+    expect(renderEvent({ type: 'outage_started', ts: at('2026-11-04T04:17'), approxFromTs: null, missingPhases: ['L1', 'L2', 'L3'], reading: r }, cfg, ru).panel).toBe(true);
+  });
+
   it('outage_started first line', () => {
     const m = renderEvent(
       { type: 'outage_started', ts: at('2026-11-04T04:17'), approxFromTs: null, missingPhases: ['L1', 'L2', 'L3'], reading: reading(at('2026-11-04T04:17'), 72, -274, 211) },
@@ -130,14 +165,14 @@ describe('renderPanel', () => {
     const now = at('2026-11-04T18:44');
     const r = { ...reading(now - MIN, 85, 4100, 2900), gridPowerW: 7000, gridVoltages: [222, 222, 222] };
     const text = renderPanel({ reading: r, grid: { state: 'on', missingPhases: [], ambiguous: false }, outageStartTs: null, lastOnTs: null, nowMs: now, staleAfterMs: 15 * MIN, limits: { chargeA: 150, dischargeA: 180 } }, cfg, ru);
-    expect(text).toContain('⚡ Из сети <b>7.0 кВт</b> · дом 2.9 · батареи 4.1');
+    expect(text).toContain('⚡ Из сети <b>7.00 кВт</b> · дом 2.90 · батареи 4.10');
   });
 
   it('panel shows battery draw against the limit during an outage', () => {
     const now = at('2026-11-04T05:29');
     const r = { ...reading(now - MIN, 60, -2400, 2400), batteryVoltage: 54.3, ratedPowerW: 10_000 };
     const text = renderPanel({ reading: r, grid: { state: 'off', missingPhases: ['L1', 'L2', 'L3'], ambiguous: false }, outageStartTs: now - 60 * MIN, lastOnTs: null, nowMs: now, staleAfterMs: 15 * MIN, limits: { chargeA: 150, dischargeA: 180 } }, cfg, ru);
-    expect(text).toContain('⚡ От батарей <b>2.4 кВт</b> · предел ≈ 9.8 кВт');
+    expect(text).toContain('⚡ От батарей <b>2.40 кВт</b> · предел ≈ 8.70 кВт');
   });
 });
 

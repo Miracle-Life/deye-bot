@@ -1,10 +1,11 @@
 import { DateTime } from 'luxon';
+import type { InlineKeyboard } from 'grammy';
 import type { Config } from '../config.js';
 import type { BatteryLimits, Interval, Reading } from '../deye/types.js';
 import type { DetectorEvent } from '../domain/detector.js';
 import { runtimeHours, timeToFullMin } from '../domain/forecast.js';
 import type { GridSample } from '../domain/grid.js';
-import { batteryLimitW, gridLoad, NOMINAL_BATTERY_V } from '../domain/load.js';
+import { batteryScaleW, batteryV, gridLoad } from '../domain/load.js';
 import type { Summary } from '../domain/stats.js';
 import type { Dict } from '../i18n/index.js';
 import type { TileState } from '../schedule/logic.js';
@@ -14,6 +15,9 @@ export interface Msg {
   text: string;
   silent: boolean;
   photo?: Buffer; // sent as a photo with `text` as the caption
+  panel?: true; // deliver the panel card itself (photo, caption, buttons) and keep it live; `text` is the fallback
+  kb?: InlineKeyboard; // buttons under whatever is sent
+  fallbackText?: string; // sent instead of `text` when the photo can't be sent
 }
 
 export interface PanelCtx {
@@ -21,6 +25,7 @@ export interface PanelCtx {
   grid: GridSample | null;
   outageStartTs: number | null;
   lastOnTs: number | null; // when grid last came back
+  lastOutageStartTs?: number | null; // start of that last outage (caption: "was off 3 h")
   nowMs: number;
   staleAfterMs: number;
   limits: BatteryLimits | null; // inverter settings; null until read
@@ -59,8 +64,12 @@ export function fmtApprox(ms: number, t: Dict): string {
 export const fmtTime = (ts: number, zone: string) => DateTime.fromMillis(ts, { zone }).toFormat('HH:mm');
 const time = fmtTime;
 const watts = (w: number | null, t: Dict) => (w === null ? '—' : `${Math.round(Math.abs(w))} ${t.units.w}`);
+/** 8432 → "8.43" (no unit). */
+export const fmtKw = (w: number) => (w / 1000).toFixed(2);
+/** Bar scale: "10" for whole kW, else "8.47". */
+export const fmtKwMax = (w: number) => (fmtKw(w).endsWith('.00') ? String(Math.round(w / 1000)) : fmtKw(w));
 export const fmtPower = (w: number, t: Dict) =>
-  Math.round(Math.abs(w)) >= 1000 ? `${(Math.abs(w) / 1000).toFixed(1)} ${t.units.kw}` : `${Math.round(Math.abs(w))} ${t.units.w}`;
+  Math.round(Math.abs(w)) >= 1000 ? `${fmtKw(Math.abs(w))} ${t.units.kw}` : `${Math.round(Math.abs(w))} ${t.units.w}`;
 const kw = fmtPower;
 const capacity = (r: Reading | null, cfg: Config) => r?.batteryCapacityKwh ?? cfg.batteryCapacityKwh;
 const load = (r: Reading) => r.upsLoadPowerW ?? r.loadPowerW;
@@ -87,6 +96,14 @@ function phasesNote(missing: string[], t: Dict): string {
   return missing.length && missing.length < ALL_PHASES ? t.common.missingPhases(missing.join(', ')) : '';
 }
 
+/** Outage start/end become the live panel; ones replayed after the bot was down keep their text. */
+export function eventMsg(e: DetectorEvent, cfg: Config, t: Dict, replayed: boolean): Msg {
+  const m = renderEvent(e, cfg, t);
+  if (!m.panel || !replayed) return m;
+  const { panel: _, ...rest } = m;
+  return rest;
+}
+
 export function renderEvent(e: DetectorEvent, cfg: Config, t: Dict): Msg {
   const z = cfg.timezone;
   const ev = t.events;
@@ -98,7 +115,7 @@ export function renderEvent(e: DetectorEvent, cfg: Config, t: Dict): Msg {
       if (note) lines.push(`⚠️ ${note}`);
       const parts = [r.soc !== null ? `🔋 ${Math.round(r.soc)}%` : null, `⚡ ${watts(load(r), t)}`, runtimeText(r, cfg, t)].filter(Boolean);
       lines.push(`${parts.join(' · ')}</blockquote>`);
-      return { text: lines.join('\n'), silent: false };
+      return { text: lines.join('\n'), silent: false, panel: true };
     }
     case 'outage_ended': {
       const r = e.reading;
@@ -111,7 +128,7 @@ export function renderEvent(e: DetectorEvent, cfg: Config, t: Dict): Msg {
       const eta = etaText(r, cfg, e.ts, t);
       if (eta) lines.push(`⏳ ${eta}`);
       lines[lines.length - 1] += '</blockquote>';
-      return { text: lines.join('\n'), silent: false };
+      return { text: lines.join('\n'), silent: false, panel: true };
     }
     case 'battery_low': {
       const r = e.reading;
@@ -199,11 +216,11 @@ function view(c: PanelCtx, cfg: Config, t: Dict, body: (r: Reading) => string[])
 function loadLine(r: Reading, c: PanelCtx, t: Dict): string[] {
   if (c.grid?.state === 'off') {
     const l = load(r);
-    const limit = batteryLimitW(c.limits?.dischargeA ?? null, r.batteryVoltage ?? NOMINAL_BATTERY_V, r.ratedPowerW);
-    return l !== null && limit !== null ? [t.panel.fromBatteries(b(kw(l, t)), kw(limit, t))] : [];
+    const limit = batteryScaleW(c.limits?.dischargeA ?? null, batteryV(r.batteryVoltage), r.ratedPowerW);
+    return l !== null ? [t.panel.fromBatteries(b(kw(l, t)), kw(limit, t))] : [];
   }
   const l = gridLoad(r);
-  return l ? [t.panel.fromGrid(b(kw(l.totalW, t)), (l.homeW / 1000).toFixed(1), (l.batteryW / 1000).toFixed(1))] : [];
+  return l ? [t.panel.fromGrid(b(kw(l.totalW, t)), fmtKw(l.homeW), fmtKw(l.batteryW))] : [];
 }
 
 function scheduleLine(c: PanelCtx, cfg: Config, t: Dict): string[] {

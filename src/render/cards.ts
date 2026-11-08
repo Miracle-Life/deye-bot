@@ -207,7 +207,11 @@ export function svgPanel(m: PanelModel): string {
   if (m.eta) {
     // Labels like "Батареї 36% · при 1.42 кВт вистачить на" can be long: shrink to the card edge.
     parts.push(`<text x="${tx}" y="196" font-size="${Math.min(14, fitLabel(m.eta.label, CARD_W - 24 - tx))}" font-weight="500" fill="${C.muted}">${esc(m.eta.label)}</text>`);
-    parts.push(`<text x="${tx}" y="228" font-size="30" font-weight="700" fill="${m.eta.color ?? TONE[m.eta.tone]}">${esc(m.eta.value)}</text>`);
+    // Value + grey "(30 год)"; both shrink together if they don't fit to the card edge.
+    const avail = CARD_W - 24 - tx;
+    const size = m.eta.sub ? Math.min(30, avail / (m.eta.value.length * 0.6 + (m.eta.sub.length + 1) * 0.36)) : 30;
+    const sub = m.eta.sub ? `<tspan dx="${(size * 0.25).toFixed(1)}" font-size="${(size * 0.6).toFixed(1)}" font-weight="600" fill="${C.muted}">${esc(m.eta.sub)}</tspan>` : '';
+    parts.push(`<text x="${tx}" y="228" font-size="${size.toFixed(1)}" font-weight="700" fill="${m.eta.color ?? TONE[m.eta.tone]}">${esc(m.eta.value)}${sub}</text>`);
   }
 
   const gap = 12;

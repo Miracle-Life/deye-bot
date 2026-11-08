@@ -1,6 +1,6 @@
 // Pure view-models for the image cards: what to show, already formatted.
 import { DateTime } from 'luxon';
-import { fmtApprox, fmtDuration, fmtKw, fmtKwMax, fmtPower, fmtTime, type PanelCtx } from '../bot/format.js';
+import { fmtApprox, fmtApproxParts, fmtDuration, fmtKw, fmtKwMax, fmtPower, fmtTime, type PanelCtx } from '../bot/format.js';
 import type { Dict } from '../i18n/index.js';
 import { batteryVerdict, socAt, type TileState } from '../schedule/logic.js';
 import type { Schedule } from '../schedule/model.js';
@@ -29,7 +29,7 @@ export interface PanelModel {
   soc: number | null;
   socKwh: string | null;
   flow: { label: string; value: string } | null;
-  eta: { label: string; value: string; tone: Tone; color?: string } | null; // color: overrides tone (runtime scale)
+  eta: { label: string; value: string; sub?: string; tone: Tone; color?: string } | null; // color: overrides tone (runtime scale); sub: grey "(30 год)"
   load: LoadBlock | null;
   schedule: ScheduleTile | null;
   tiles: Tile[];
@@ -263,12 +263,15 @@ export function panelModel(c: PanelCtx, cfg: Config, t: Dict): PanelModel {
       flow = { label: k.fromGridNow, value: fmtPower(house, t) };
       if (hours !== null) {
         const label = r.soc >= 99 ? k.reserveFull(fmtPower(house, t)) : k.reserveAt(Math.round(r.soc), fmtPower(house, t));
-        const approx = fmtApprox(hours * H, t);
-        eta = { label, value: approx.startsWith('>') ? approx : `≈ ${approx}`, tone: 'green', color: runtimeColor(hours) };
+        const a = fmtApproxParts(hours * H, t);
+        eta = { label, value: a.main.startsWith('>') ? a.main : `≈ ${a.main}`, ...(a.hours ? { sub: a.hours } : {}), tone: 'green', color: runtimeColor(hours) };
       }
     } else if (p < 0) {
       flow = { label: k.discharge, value: fmtPower(p, t) };
-      if (hours !== null) eta = { label: k.runtime, value: fmtApprox(hours * H, t), tone: 'amber', color: runtimeColor(hours) };
+      if (hours !== null) {
+        const a = fmtApproxParts(hours * H, t);
+        eta = { label: k.runtime, value: a.main, ...(a.hours ? { sub: a.hours } : {}), tone: 'amber', color: runtimeColor(hours) };
+      }
     } else if (p > 0) {
       flow = { label: k.charge, value: `+${fmtPower(p, t)}` };
       const m = r.soc !== null ? timeToFullMin(r.soc, p, cap(r, cfg)) : null;

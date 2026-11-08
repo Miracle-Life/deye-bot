@@ -3,7 +3,7 @@ import { dicts } from '../src/i18n/index.js';
 import { describe, expect, it } from 'vitest';
 import { loadConfig } from '../src/config.js';
 import { emptyReading } from '../src/deye/types.js';
-import { eventMsg, fmtApprox, fmtDuration, fmtKw, fmtKwMax, fmtPower, renderAccessRequest, renderDay, renderEvent, renderPanel, renderWeek, socBar } from '../src/bot/format.js';
+import { eventMsg, fmtApprox, fmtApproxParts, fmtDuration, fmtKw, fmtKwMax, fmtPower, renderAccessRequest, renderDay, renderEvent, renderPanel, renderWeek, socBar } from '../src/bot/format.js';
 
 const cfg = loadConfig({ TELEGRAM_TOKEN: 't', ADMIN_TELEGRAM_ID: '1', DEYE_APP_ID: 'a', DEYE_APP_SECRET: 's', DEYE_EMAIL: 'e', DEYE_PASSWORD: 'p' });
 const at = (iso: string) => DateTime.fromISO(iso, { zone: 'Europe/Kyiv' }).toMillis();
@@ -32,14 +32,20 @@ describe('format helpers', () => {
     expect(fmtDuration((51 * 60 + 5) * MIN, ru)).toBe('2 сут 3 ч');
   });
 
-  it('fmtApprox: whole hours from 10 h, days from 48 h, "> 7 days" beyond a week', () => {
+  it('fmtApprox: hours and minutes below 30 h, days from 30 h, "> 7 days" beyond a week', () => {
     const uk = dicts.uk;
     expect(fmtApprox(9.5 * 60 * MIN, uk)).toBe('9 год 30 хв');
-    expect(fmtApprox(14.9 * 60 * MIN, uk)).toBe('14 год');
-    expect(fmtApprox(47.9 * 60 * MIN, uk)).toBe('47 год');
-    expect(fmtApprox(48 * 60 * MIN, uk)).toBe('2 доб');
-    expect(fmtApprox(84.8 * 60 * MIN, uk)).toBe('3 доб 12 год');
-    expect(fmtApprox(167 * 60 * MIN, ru)).toBe('6 сут 23 ч');
+    expect(fmtApprox(14.9 * 60 * MIN, uk)).toBe('14 год 54 хв');
+    expect(fmtApprox(23.9 * 60 * MIN, uk)).toBe('23 год 54 хв');
+    expect(fmtApprox(24 * 60 * MIN, uk)).toBe('24 год');
+    expect(fmtApprox(29.9 * 60 * MIN, uk)).toBe('29 год 54 хв');
+    expect(fmtApprox(30 * 60 * MIN, uk)).toBe('1 доб 6 год (30 год)');
+    expect(fmtApprox(44.2 * 60 * MIN, uk)).toBe('1 доб 20 год (44 год)');
+    expect(fmtApprox(48 * 60 * MIN, uk)).toBe('2 доб (48 год)');
+    expect(fmtApproxParts(84.8 * 60 * MIN, uk)).toEqual({ main: '3 доб 12 год', hours: '(84 год)' });
+    expect(fmtApproxParts(9.5 * 60 * MIN, uk)).toEqual({ main: '9 год 30 хв', hours: null });
+    expect(fmtApprox(84.8 * 60 * MIN, uk)).toBe('3 доб 12 год (84 год)');
+    expect(fmtApprox(167 * 60 * MIN, ru)).toBe('6 сут 23 ч (167 ч)');
     expect(fmtApprox(168 * 60 * MIN, ru)).toBe('> 7 сут');
     expect(fmtApprox(706 * 60 * MIN, dicts.en)).toBe('> 7 d');
   });
@@ -96,7 +102,7 @@ describe('renderEvent', () => {
     expect(m.silent).toBe(false);
     expect(m.text).toContain('72%');
     expect(m.text).toContain('211 Вт');
-    expect(m.text).toContain('≈ 2 сут 22 ч');
+    expect(m.text).toContain('≈ 2 сут 22 ч (70 ч)');
   });
 
   it('partial phase loss names missing phase', () => {
@@ -168,7 +174,7 @@ describe('renderPanel', () => {
     expect(text).toContain('🔴 <b>Света нет</b> · дом на батареях');
     expect(text).toContain('1 ч 12 мин');
     expect(text).toContain('🟩🟩🟩🟩🟩🟩🟩⬜⬜⬜');
-    expect(text).toContain('хватит ≈ <b>2 сут 22 ч</b>');
+    expect(text).toContain('хватит ≈ <b>2 сут 22 ч (70 ч)</b>');
     expect(text).toContain('обновлено 2 мин назад');
     expect(text).not.toContain('<pre>');
   });

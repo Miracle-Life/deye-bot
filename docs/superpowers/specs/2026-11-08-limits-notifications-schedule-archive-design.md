@@ -164,5 +164,5 @@ Every variable string on every card (old and new) must stay inside its box in **
 - **"Lasts about" colour by hours left** (idle and outage alike), 10 steps starting at the ring's 100 % colour:
   48+ `#10b981`, 36 `#2dcb80`, 24 `#4ade80`, 12 `#76e25a`, 9 `#a3e635`, 6 `#ced925`, 4 `#facc15`, 2 `#f97316`,
   1 `#ef4444`, below 1 h `#b91c1c`.
-- **Long runtimes in days:** below 10 h `9 год 30 хв`, 10–48 h whole hours `14 год`, from 48 h days + hours
+- **Long runtimes in days:** below 30 h hours and minutes `14 год 54 хв`, from 30 h days + hours with the total hours in grey brackets `1 доб 6 год (30 год)`
   `3 доб 12 год`, a week or more `> 7 доб` (no `≈` in front). Applies to the panel, notifications and text panel.

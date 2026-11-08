@@ -56,15 +56,27 @@ export function fmtDuration(ms: number, t: Dict): string {
   return `${m} ${u.min}`;
 }
 
-// Long forecasts don't need minute precision: whole hours from 10 h, days + hours from 48 h, "> 7 days" beyond.
-export function fmtApprox(ms: number, t: Dict): string {
+// Forecasts: hours and minutes below 30 h; from 30 h days + hours plus the total hours in brackets
+// ("1 доб 6 год (30 год)"); a week or more "> 7 доб".
+export function fmtApproxParts(ms: number, t: Dict): { main: string; hours: string | null } {
   const u = t.units;
-  if (ms >= 7 * 24 * H) return `> 7 ${u.d}`;
-  if (ms >= 48 * H) {
+  if (ms >= 7 * 24 * H) return { main: `> 7 ${u.d}`, hours: null };
+  if (ms >= 30 * H) {
     const h = Math.floor(ms / H);
-    return h % 24 ? `${Math.floor(h / 24)} ${u.d} ${h % 24} ${u.h}` : `${h / 24} ${u.d}`;
+    const main = h % 24 ? `${Math.floor(h / 24)} ${u.d} ${h % 24} ${u.h}` : `${h / 24} ${u.d}`;
+    return { main, hours: `(${h} ${u.h})` };
   }
-  return ms >= 10 * H ? `${Math.floor(ms / H)} ${u.h}` : fmtDuration(ms, t);
+  // Hours and minutes even past 24 h (fmtDuration would switch to days there).
+  const min = Math.max(0, Math.round(ms / MIN));
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  if (!h) return { main: `${m} ${u.min}`, hours: null };
+  return { main: m ? `${h} ${u.h} ${m} ${u.min}` : `${h} ${u.h}`, hours: null };
+}
+
+export function fmtApprox(ms: number, t: Dict): string {
+  const p = fmtApproxParts(ms, t);
+  return p.hours ? `${p.main} ${p.hours}` : p.main;
 }
 
 export const fmtTime = (ts: number, zone: string) => DateTime.fromMillis(ts, { zone }).toFormat('HH:mm');

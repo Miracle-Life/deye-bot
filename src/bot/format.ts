@@ -5,7 +5,7 @@ import type { BatteryLimits, Interval, Reading } from '../deye/types.js';
 import type { DetectorEvent } from '../domain/detector.js';
 import { runtimeHours, timeToFullMin } from '../domain/forecast.js';
 import type { GridSample } from '../domain/grid.js';
-import { batteryScaleW, batteryV, gridLoad } from '../domain/load.js';
+import { batteryLoad, batteryScaleW, batteryV, gridLoad, MIN_SHOWN_W, runtimeDrainW } from '../domain/load.js';
 import type { Summary } from '../domain/stats.js';
 import type { Dict } from '../i18n/index.js';
 import type { TileState } from '../schedule/logic.js';
@@ -97,7 +97,7 @@ function when(ts: number, approxFromTs: number | null, zone: string, t: Dict): s
 }
 
 function runtimeText(r: Reading, cfg: Config, t: Dict): string | null {
-  const l = load(r);
+  const l = runtimeDrainW(r);
   if (r.soc === null || l === null) return null;
   const h = runtimeHours(r.soc, l, capacity(r, cfg), cfg.batteryReservePct);
   return h === null ? null : t.events.runtime(fmtApprox(h * H, t));
@@ -200,8 +200,9 @@ function batteryBlock(r: Reading, cfg: Config, nowMs: number, t: Dict): string[]
   if (r.soc !== null) out.push(`🔋 ${b(`${Math.round(r.soc)}%`)}  ${socBar(r.soc)}`);
   const w = r.batteryPowerW;
   if (w !== null && w < 0) {
-    const l = load(r);
-    const h = r.soc !== null && l !== null ? runtimeHours(r.soc, l, capacity(r, cfg), cfg.batteryReservePct) : null;
+    // Not their own −40 W while they wait on the grid: what they'd give the house.
+    const drain = runtimeDrainW(r);
+    const h = r.soc !== null && drain !== null ? runtimeHours(r.soc, drain, capacity(r, cfg), cfg.batteryReservePct) : null;
     out.push(`${p.discharge(b(kw(w, t)))}${h !== null ? p.runtimeBold(b(fmtApprox(h * H, t))) : ''}`);
   } else if (w !== null && w > 0) {
     const min = r.soc !== null ? timeToFullMin(r.soc, w, capacity(r, cfg)) : null;
@@ -231,14 +232,16 @@ function view(c: PanelCtx, cfg: Config, t: Dict, body: (r: Reading) => string[])
   return parts.join('\n');
 }
 
+const shown = (w: number) => (w >= MIN_SHOWN_W ? fmtKw(w) : null);
+
 function loadLine(r: Reading, c: PanelCtx, t: Dict): string[] {
   if (c.grid?.state === 'off') {
-    const l = load(r);
+    const l = batteryLoad(r);
     const limit = batteryScaleW(c.limits?.dischargeA ?? null, batteryV(r.batteryVoltage), r.ratedPowerW);
-    return l !== null ? [t.panel.fromBatteries(b(kw(l, t)), kw(limit, t))] : [];
+    return l ? [t.panel.fromBatteries(b(kw(l.totalW, t)), fmtKw(l.homeW), shown(l.inverterW), kw(limit, t))] : [];
   }
   const l = gridLoad(r);
-  return l ? [t.panel.fromGrid(b(kw(l.totalW, t)), fmtKw(l.homeW), fmtKw(l.batteryW))] : [];
+  return l ? [t.panel.fromGrid(b(kw(l.totalW, t)), fmtKw(l.homeW), fmtKw(l.batteryW), shown(l.inverterW))] : [];
 }
 
 function scheduleLine(c: PanelCtx, cfg: Config, t: Dict): string[] {

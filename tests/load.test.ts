@@ -1,34 +1,87 @@
 import { describe, expect, it } from 'vitest';
-import { runtimeColor, batteryV, batteryAlertGate, batteryBands, batteryWatchStep, batteryScaleW, batteryZone, gridChargeW, gridLoad, gridScaleW, gridWatchStep, loadZone, stepGridLoad } from '../src/domain/load.js';
+import { runtimeColor, batteryV, batteryAlertGate, batteryDrainW, batteriesIdleOnGrid, batteryLoad, runtimeDrainW, batteryBands, batteryWatchStep, batteryScaleW, batteryZone, gridChargeW, gridLoad, gridScaleW, gridWatchStep, loadZone, stepGridLoad } from '../src/domain/load.js';
 
 describe('gridLoad', () => {
-  it('house = what the inverter measures going to the house; batteries = the rest of the grid draw (with charging losses)', () => {
-    // 17:28 on 2026-11-08: grid 6.04, battery 4.13 (DC), UPS-Load 1.73.
-    expect(gridLoad({ gridPowerW: 6040, batteryPowerW: 4130, upsLoadPowerW: 1730, loadPowerW: 0 })).toEqual({ totalW: 6040, homeW: 1730, batteryW: 4310 });
-    // Not charging: all of it is the house.
-    expect(gridLoad({ gridPowerW: 1420, batteryPowerW: -45, upsLoadPowerW: 1420, loadPowerW: 0 })).toEqual({ totalW: 1420, homeW: 1420, batteryW: 0 });
+  const split = (totalW: number, homeW: number, batteryW: number, inverterW: number, bar = { homeW, batteryW, inverterW }, topped: unknown = null) => ({ totalW, homeW, batteryW, inverterW, bar, topped });
+
+  it('grid = house (as measured) + charging (DC, the "Charge" figure) + the inverter, which is the rest', () => {
+    // 2026-11-11 23:39, the owner's panel: grid 5.66, UPS-Load 1.31, battery +4.17 → inverter 0.18.
+    expect(gridLoad({ gridPowerW: 5660, batteryPowerW: 4170, upsLoadPowerW: 1310, loadPowerW: 1310 })).toEqual(split(5660, 1310, 4170, 180));
+    // Batteries full and waiting: all of it is the house.
+    expect(gridLoad({ gridPowerW: 1420, batteryPowerW: -45, upsLoadPowerW: 1420, loadPowerW: 0 })).toEqual(split(1420, 1420, 0, 0));
   });
 
-  it('the house share never exceeds the grid draw (sun covering the house)', () => {
-    expect(gridLoad({ gridPowerW: 1000, batteryPowerW: 900, upsLoadPowerW: 1500, loadPowerW: 0 })).toEqual({ totalW: 1000, homeW: 1000, batteryW: 0 });
+  it('the house keeps its measured value when it took more than the grid gave: the rest came from the batteries', () => {
+    // 2026-11-11 08:12: grid 834, UPS-Load 908, battery −105.
+    const l = gridLoad({ gridPowerW: 834, batteryPowerW: -105, upsLoadPowerW: 908, loadPowerW: 908 });
+    expect(l).toEqual(split(834, 908, 0, 0, { homeW: 834, batteryW: 0, inverterW: 0 }, { w: 74, from: 'batteries' }));
   });
 
-  it('without a measured house load: grid minus battery (old split)', () => {
-    expect(gridLoad({ gridPowerW: 7000, batteryPowerW: 4100 })).toEqual({ totalW: 7000, homeW: 2900, batteryW: 4100 });
+  it('sun covering the house and charging: the bar holds the grid draw only', () => {
+    expect(gridLoad({ gridPowerW: 1000, batteryPowerW: 900, upsLoadPowerW: 1500, pvPowerW: 1600 })).toEqual(
+      split(1000, 1500, 900, 0, { homeW: 1000, batteryW: 0, inverterW: 0 }, { w: 500, from: 'sun' }),
+    );
+  });
+
+  it('a few watts over the grid with no other source is two fields read apart, not worth a note', () => {
+    expect(gridLoad({ gridPowerW: 281, batteryPowerW: -57, upsLoadPowerW: 288, pvPowerW: 0 })!.topped).toBeNull();
+  });
+
+  it('without a measured house load: grid minus charging', () => {
+    expect(gridLoad({ gridPowerW: 7000, batteryPowerW: 4100 })).toEqual(split(7000, 2900, 4100, 0));
   });
 
   it('caps the battery share at the grid draw when the sun covers part of the charge', () => {
-    expect(gridLoad({ gridPowerW: 3000, batteryPowerW: 4100 })).toEqual({ totalW: 3000, homeW: 0, batteryW: 3000 });
-  });
-
-  it('gives everything to the house while discharging', () => {
-    expect(gridLoad({ gridPowerW: 2000, batteryPowerW: -500 })).toEqual({ totalW: 2000, homeW: 2000, batteryW: 0 });
+    expect(gridLoad({ gridPowerW: 3000, batteryPowerW: 4100 })).toEqual(split(3000, 0, 4100, 0, { homeW: 0, batteryW: 3000, inverterW: 0 }));
   });
 
   it('shows nothing on export, near-zero draw or missing data', () => {
     expect(gridLoad({ gridPowerW: -300, batteryPowerW: 0 })).toBeNull();
     expect(gridLoad({ gridPowerW: 20, batteryPowerW: 0 })).toBeNull();
     expect(gridLoad({ gridPowerW: null, batteryPowerW: 100 })).toBeNull();
+  });
+});
+
+describe('batteryLoad', () => {
+  it('out of the batteries = house + the inverter (2026-11-11 21:06: battery −1421, UPS-Load 1352)', () => {
+    expect(batteryLoad({ batteryPowerW: -1421, upsLoadPowerW: 1352, loadPowerW: 1352 })).toEqual({
+      totalW: 1421,
+      homeW: 1352,
+      inverterW: 69,
+      bar: { homeW: 1352, inverterW: 69 },
+      topped: null,
+    });
+  });
+
+  it('sun covering part of the house during an outage', () => {
+    expect(batteryLoad({ batteryPowerW: -400, upsLoadPowerW: 1200, pvPowerW: 900 })).toMatchObject({ totalW: 400, homeW: 1200, inverterW: 0, topped: { w: 800, from: 'sun' } });
+  });
+
+  it('battery power unknown: the house alone; no house load: nothing', () => {
+    expect(batteryLoad({ batteryPowerW: null, upsLoadPowerW: 700 })).toMatchObject({ totalW: 700, homeW: 700, inverterW: 0 });
+    expect(batteryLoad({ batteryPowerW: -700, upsLoadPowerW: null, loadPowerW: null })).toBeNull();
+  });
+});
+
+describe('battery drain', () => {
+  it('house + the inverter: matches the owner\'s outages within ~1 %', () => {
+    // House → measured discharge on 2026-11-10/11.
+    for (const [house, out] of [[254, 310], [1352, 1421], [2752, 2848], [405, 460]] as const) {
+      expect(Math.abs(batteryDrainW(house) - out) / out).toBeLessThan(0.015);
+    }
+  });
+
+  it('runtime uses the batteries\' own figure while discharging, the estimate while they wait', () => {
+    expect(runtimeDrainW({ batteryPowerW: -1421, upsLoadPowerW: 1352, loadPowerW: 1352 })).toBe(1421);
+    // A frame from just before the outage (batteries still waiting): the estimate, not their 40 W.
+    expect(runtimeDrainW({ batteryPowerW: -40, upsLoadPowerW: 1000, loadPowerW: 1000 })).toBe(batteryDrainW(1000));
+    expect(runtimeDrainW({ batteryPowerW: 0, upsLoadPowerW: 1000, loadPowerW: 1000 })).toBe(batteryDrainW(1000));
+    expect(runtimeDrainW({ batteryPowerW: null, upsLoadPowerW: null, loadPowerW: null })).toBeNull();
+  });
+
+  it('with the grid on, the inverter\'s own use and a brief load step still count as waiting', () => {
+    expect([-40, -105, -149, 99].map(batteriesIdleOnGrid)).toEqual([true, true, true, true]);
+    expect([-150, -500, 100, 4170].map(batteriesIdleOnGrid)).toEqual([false, false, false, false]);
   });
 });
 

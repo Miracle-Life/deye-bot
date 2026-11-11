@@ -102,7 +102,8 @@ describe('renderEvent', () => {
     expect(m.silent).toBe(false);
     expect(m.text).toContain('72%');
     expect(m.text).toContain('211 Вт');
-    expect(m.text).toContain('≈ 2 сут 22 ч (70 ч)');
+    // Runtime at what the batteries give (274 W: house 211 + the inverter), not the house alone.
+    expect(m.text).toContain('≈ 2 сут 6 ч (54 ч)');
   });
 
   it('partial phase loss names missing phase', () => {
@@ -174,9 +175,17 @@ describe('renderPanel', () => {
     expect(text).toContain('🔴 <b>Света нет</b> · дом на батареях');
     expect(text).toContain('1 ч 12 мин');
     expect(text).toContain('🟩🟩🟩🟩🟩🟩🟩⬜⬜⬜');
-    expect(text).toContain('хватит ≈ <b>2 сут 22 ч (70 ч)</b>');
+    expect(text).toContain('хватит ≈ <b>2 сут 6 ч (54 ч)</b>');
     expect(text).toContain('обновлено 2 мин назад');
     expect(text).not.toContain('<pre>');
+  });
+
+  it('batteries waiting on the grid: runtime at the house load, not their own 40 W', () => {
+    const now = at('2026-11-04T18:44');
+    const r = { ...reading(now - MIN, 100, -40, 1000), gridPowerW: 1000, gridVoltages: [230, 230, 230] };
+    const text = renderPanel({ reading: r, grid: { state: 'on', missingPhases: [], ambiguous: false }, outageStartTs: null, lastOnTs: null, nowMs: now, staleAfterMs: 15 * MIN, limits: null }, cfg, ru);
+    expect(text).not.toContain('сут');
+    expect(text).toMatch(/хватит ≈ <b>\d+ ч/);
   });
 
   it('panel shows grid draw while charging from the grid', () => {
@@ -184,13 +193,19 @@ describe('renderPanel', () => {
     const r = { ...reading(now - MIN, 85, 4100, 2900), gridPowerW: 7000, gridVoltages: [222, 222, 222] };
     const text = renderPanel({ reading: r, grid: { state: 'on', missingPhases: [], ambiguous: false }, outageStartTs: null, lastOnTs: null, nowMs: now, staleAfterMs: 15 * MIN, limits: { chargeA: 150, dischargeA: 180 } }, cfg, ru);
     expect(text).toContain('⚡ Из сети <b>7.00 кВт</b> · дом 2.90 · батареи 4.10');
+    const owner = { ...r, gridPowerW: 5660, batteryPowerW: 4170, upsLoadPowerW: 1310 };
+    expect(renderPanel({ reading: owner, grid: { state: 'on', missingPhases: [], ambiguous: false }, outageStartTs: null, lastOnTs: null, nowMs: now, staleAfterMs: 15 * MIN, limits: null }, cfg, ru)).toContain(
+      '⚡ Из сети <b>5.66 кВт</b> · дом 1.31 · батареи 4.17 · инвертор 0.18',
+    );
   });
 
   it('panel shows battery draw against the limit during an outage', () => {
     const now = at('2026-11-04T05:29');
     const r = { ...reading(now - MIN, 60, -2400, 2400), batteryVoltage: 54.3, ratedPowerW: 10_000 };
     const text = renderPanel({ reading: r, grid: { state: 'off', missingPhases: ['L1', 'L2', 'L3'], ambiguous: false }, outageStartTs: now - 60 * MIN, lastOnTs: null, nowMs: now, staleAfterMs: 15 * MIN, limits: { chargeA: 150, dischargeA: 180 } }, cfg, ru);
-    expect(text).toContain('⚡ От батарей <b>2.40 кВт</b> · предел ≈ 8.70 кВт');
+    expect(text).toContain('⚡ От батарей <b>2.40 кВт</b> · дом 2.40 · предел ≈ 8.70 кВт');
+    const real = renderPanel({ reading: { ...r, batteryPowerW: -1421, upsLoadPowerW: 1352 }, grid: { state: 'off', missingPhases: ['L1', 'L2', 'L3'], ambiguous: false }, outageStartTs: now - 60 * MIN, lastOnTs: null, nowMs: now, staleAfterMs: 15 * MIN, limits: { chargeA: 150, dischargeA: 180 } }, cfg, ru);
+    expect(real).toContain('⚡ От батарей <b>1.42 кВт</b> · дом 1.35 · инвертор 0.07 · предел ≈ 8.70 кВт');
   });
 });
 

@@ -172,7 +172,7 @@ Settings marked **⚙️** are only *defaults*: the owner can change them later 
 |---|---|---|
 | `BATTERY_TEMP_MAX_C` ⚙️ | `45` | Battery overheating alert, °C. |
 | `INVERTER_TEMP_MAX_C` ⚙️ | `70` | Inverter overheating alert, °C. |
-| `GRID_LOAD_MAX_KW` ⚙️ | `8` | Alert (owner only) when the house + batteries draw this much from the grid, kW. The red zone on the panel starts here; the bar's scale is the inverter's rated power (10 kW). The all-clear comes 0.5 kW lower. |
+| `GRID_LOAD_MAX_KW` ⚙️ | `8` | Alert (owner only) when the house + battery charging + the inverter's own share draw this much from the grid, kW. The red zone on the panel starts here; the bar's scale is the inverter's rated power (10 kW). The all-clear comes 0.5 kW lower. |
 | `BATTERY_LOAD_MAX_KW` ⚙️ | `7` | Alert (everyone) when the house draws this much from the batteries during an outage, kW. The red zone starts here; the bar's scale is what the inverter can give: max discharge current × battery voltage × 0.89, capped by its rating. The all-clear comes 0.5 kW lower. |
 | `GRID_CHARGE_A` ⚙️ | `80` | Grid charge current set on the inverter (**Batt set2 → Grid Charge**), A. Deye Cloud doesn't report it, so set it here; the panel shows the charge limit from it. |
 | `CLOUD_DOWN_AFTER_MIN` ⚙️ | `10` | How long the Deye cloud has to stay unreachable before the owner hears "Deye cloud not responding". |

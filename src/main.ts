@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { GrammyError } from 'grammy';
 import { broadcast } from './bot/notifier.js';
 import { createBot, setupCommands } from './bot/bot.js';
+import { homeKb } from './bot/keyboards.js';
 import { dicts, LANGS } from './i18n/index.js';
 import { esc, eventMsg } from './bot/format.js';
 import { loadConfig } from './config.js';
@@ -119,10 +120,11 @@ async function main(): Promise<void> {
           ? await broadcast(bot.api, group, { text: card.caption, fallbackText: msg.text, silent: msg.silent, photo: card.png, kb: card.kb }, markBlocked, quiet, (id, mid, asPhoto) => asPhoto && trackLive(id, mid, lang))
           : await broadcast(bot.api, group, { ...msg, kb: panelKbFor(lang) }, markBlocked, quiet);
       } else {
-        // Loud household events carry the panel picture and buttons; technical and quiet ones stay plain text.
+        // Loud household events carry the panel picture and buttons; technical and quiet ones stay plain text,
+        // with "🏠 Home" under them: a fresh panel below the message instead of scrolling up to an old one.
         const loud = who === 'all' && !msg.silent;
         const photo = loud ? panelPng(lang) : null;
-        res = await broadcast(bot.api, group, loud ? { ...msg, ...(photo ? { photo } : {}), kb: panelKbFor(lang) } : msg, markBlocked, quiet);
+        res = await broadcast(bot.api, group, loud ? { ...msg, ...(photo ? { photo } : {}), kb: panelKbFor(lang) } : { ...msg, kb: msg.kb ?? homeKb(dicts[lang]) }, markBlocked, quiet);
       }
       total.sent += res.sent;
       total.failed += res.failed;
@@ -151,7 +153,7 @@ async function main(): Promise<void> {
     const quiet = isQuietHour(Date.now(), cfg.timezone, cfg.quietFrom, cfg.quietTo);
     void schedule
       .tickReminders(repo.approvedUsers(), poller.state.grid, async (u, msg) => {
-        await broadcast(bot.api, [u], { ...msg, kb: panelKbFor(u.lang) }, markBlocked, quiet);
+        await broadcast(bot.api, [u], { ...msg, kb: homeKb(dicts[u.lang]) }, markBlocked, quiet);
       })
       .catch((e) => log.warn('reminders failed', errInfo(e)));
   }, 60_000);

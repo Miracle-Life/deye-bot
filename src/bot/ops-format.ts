@@ -12,7 +12,7 @@ export function renderWatch(e: WatchEvent, z: string, t: Dict): Msg {
   switch (e.type) {
     case 'grid_high':
       return {
-        text: `<b>${w.gridHigh(fmtKw(e.load.totalW))}</b>\n<i>${w.gridHighNote(fmtKw(e.load.homeW), fmtKw(e.load.batteryW), e.limitW / 1000, fmtKwMax(e.scaleW))}</i>`,
+        text: `<b>${w.gridHigh(fmtKw(e.load.totalW))}</b>\n<i>${w.gridHighNote(fmtKw(e.load.homeW), fmtKw(e.load.batteryW), fmtKw(e.load.inverterW), e.limitW / 1000, fmtKwMax(e.scaleW))}</i>`,
         silent: false,
       };
     case 'grid_ok':

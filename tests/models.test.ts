@@ -21,16 +21,45 @@ describe('panelModel', () => {
 
   it('grid load: total, zone, house/battery split, charge limit', () => {
     const m = panelModel(ctx({}), cfg, ru);
-    expect(m.load).toMatchObject({ value: '7.00', max: '10 кВт', zone: 'orange', legend: { home: { label: 'Дом', kw: '2.90' }, battery: { label: 'Батареи', kw: '4.10' }, limit: 'лимит заряда от сети 80 А ≈ 4.34 кВт' } });
-    expect(m.load!.homeFrac).toBeCloseTo(0.29);
-    expect(m.load!.batteryFrac).toBeCloseTo(0.41);
+    expect(m.load).toMatchObject({ value: '7.00', max: '10 кВт', zone: 'orange', legend: { limit: 'лимит заряда от сети 80 А ≈ 4.34 кВт' } });
+    expect(m.load!.legend.items).toEqual([
+      { kind: 'home', label: 'Дом', kw: '2.90' },
+      { kind: 'charge', label: 'Батареи', kw: '4.10' },
+    ]);
+    expect(m.load!.segments.map((s) => [s.kind, s.frac])).toEqual([['home', 0.29], ['charge', 0.41], ['inverter', 0]]);
+  });
+
+  it('the owner\'s 23:39 panel: legend = "Home" tile + "Charge" figure + the inverter, adding up to the grid draw', () => {
+    const r = { ...base, ts: now - MIN, soc: 93, gridPowerW: 5660, batteryPowerW: 4170, upsLoadPowerW: 1310, loadPowerW: 1310, batteryVoltage: 54.3, ratedPowerW: 10_000, gridVoltages: [236, 236, 236] };
+    const m = panelModel(ctx({ reading: r }), cfg, dicts.uk);
+    expect(m.flow).toEqual({ label: 'Заряд', value: '+4.17 кВт' });
+    expect(m.tiles.find((t) => t.icon === 'home')).toMatchObject({ value: '1.31', unit: 'кВт' });
+    expect(m.load!.value).toBe('5.66');
+    expect(m.load!.legend.items).toEqual([
+      { kind: 'home', label: 'Будинок', kw: '1.31' },
+      { kind: 'charge', label: 'Батареї', kw: '4.17' },
+      { kind: 'inverter', label: 'Інвертор', kw: '0.18' },
+    ]);
+    expect(m.load!.segments.reduce((a, s) => a + s.frac, 0)).toBeCloseTo(0.566, 3);
+  });
+
+  it('the owner\'s 08:12 reading: the house keeps its 908 W, the part beyond the grid is from the batteries', () => {
+    const r = { ...base, ts: now - MIN, soc: 100, gridPowerW: 834, batteryPowerW: -105, upsLoadPowerW: 908, loadPowerW: 908, ratedPowerW: 10_000, gridVoltages: [230, 230, 230] };
+    const m = panelModel(ctx({ reading: r }), cfg, dicts.uk);
+    expect(m.flow).toEqual({ label: 'Будинок живиться від мережі', value: '908 Вт' });
+    expect(m.tiles.find((t) => t.icon === 'home')).toMatchObject({ value: '908', unit: 'Вт' });
+    expect(m.load!.legend.items).toEqual([
+      { kind: 'home', label: 'Будинок', kw: '0.91' },
+      { kind: 'note', label: 'з них 0.07 з батарей', kw: '' },
+    ]);
+    expect(m.load!.segments.map((s) => s.kind === 'home' && s.frac)).toEqual([0.0834, false, false]);
   });
 
   it('battery mode: house draw against the discharge/inverter limit', () => {
     const outage = { ...base, ts: now - MIN, soc: 60, batteryPowerW: -2400, upsLoadPowerW: 2400, batteryVoltage: 54.3, ratedPowerW: 10_000, gridVoltages: [0, 0, 0] };
     const m = panelModel(ctx({ reading: outage, grid: { state: 'off', missingPhases: ['L1', 'L2', 'L3'], ambiguous: false } }), cfg, ru);
-    expect(m.load).toMatchObject({ label: 'От батарей', value: '2.40', max: '8.70 кВт', zone: 'green', legend: { home: { label: 'Дом', kw: '2.40' }, battery: null, limit: 'лимит разряда 180 А ≈ 8.70 кВт · инвертор 10 кВт' } });
-    expect(m.load!.homeFrac).toBeCloseTo(2400 / 8699);
+    expect(m.load).toMatchObject({ label: 'От батарей', value: '2.40', max: '8.70 кВт', zone: 'green', legend: { items: [{ kind: 'home', label: 'Дом', kw: '2.40' }], limit: 'лимит разряда 180 А ≈ 8.70 кВт · инвертор 10 кВт' } });
+    expect(m.load!.segments[0]!.frac).toBeCloseTo(2400 / 8699);
     expect(m.load!.scale).toEqual({ yellow: 0.5, orange: 0.7, red: 7000 / 8699 });
   });
 
@@ -43,7 +72,7 @@ describe('panelModel', () => {
     const out = { ...base, ts: now - MIN, soc: 60, batteryPowerW: -2400, upsLoadPowerW: 2400, batteryVoltage: 0, ratedPowerW: 10_000, gridVoltages: [0, 0, 0] };
     const o = panelModel(ctx({ reading: out, grid: { state: 'off', missingPhases: ['L1', 'L2', 'L3'], ambiguous: false } }), cfg, ru).load!;
     expect(o.max).toBe('8.20 кВт');
-    expect(Number.isFinite(o.homeFrac)).toBe(true);
+    expect(o.segments.every((s) => Number.isFinite(s.frac))).toBe(true);
     const grid = { ...charging, batteryVoltage: 0 };
     expect(panelModel(ctx({ reading: grid }), cfg, ru).load!.legend.limit).toBe('лимит заряда от сети 80 А ≈ 4.10 кВт');
   });
@@ -88,7 +117,8 @@ describe('panelModel', () => {
     expect(m.soc).toBe(69);
     expect(m.socKwh).toBe('16.3 кВт·ч');
     expect(m.flow).toEqual({ label: 'Разряд', value: '1.13 кВт' });
-    expect(m.eta).toEqual({ label: 'Хватит примерно на', value: '12 ч 58 мин', tone: 'amber', color: '#76e25a' });
+    // At what the batteries give (1126 W), not the house alone (1072 W).
+    expect(m.eta).toEqual({ label: 'Хватит примерно на', value: '12 ч 20 мин', tone: 'amber', color: '#76e25a' });
     expect(m.tiles.find((t) => t.icon === 'grid')).toMatchObject({ value: 'нет', tone: 'red' });
     expect(m.tiles.find((t) => t.icon === 'home')).toMatchObject({ value: '1.07', unit: 'кВт' });
     expect(m.stale).toBeNull();
@@ -101,14 +131,16 @@ describe('panelModel', () => {
     const full = panelModel(ctx({ reading: r }), cfg, uk);
     expect(full.flow).toEqual({ label: 'Будинок живиться від мережі', value: '1.42 кВт' });
     expect(full.eta).toMatchObject({ label: 'Батареї повні · при 1.42 кВт вистачить на', tone: 'green', color: '#76e25a' });
-    expect(full.eta!.value).toBe('≈ 14 год 56 хв');
+    // House 1.42 kW + the inverter ≈ 1.49 kW from the batteries.
+    expect(full.eta!.value).toBe('≈ 14 год 14 хв');
     const part = panelModel(ctx({ reading: { ...r, soc: 36, upsLoadPowerW: 600 } }), cfg, uk);
     expect(part.flow!.value).toBe('600 Вт');
     expect(part.eta!.label).toBe('Батареї 36% · при 600 Вт вистачить на');
     // Beyond a week: "> 7 доб", no "≈" in front.
-    expect(panelModel(ctx({ reading: { ...r, upsLoadPowerW: 90 } }), cfg, uk).eta!.value).toBe('> 7 доб');
-    expect(panelModel(ctx({ reading: { ...r, upsLoadPowerW: 250 } }), cfg, uk).eta!.value).toBe('≈ 3 доб 12 год');
-    expect(panelModel(ctx({ reading: { ...r, upsLoadPowerW: 250 } }), cfg, uk).eta!.sub).toBe('(84 год)');
+    expect(panelModel(ctx({ reading: { ...r, upsLoadPowerW: 40 } }), cfg, uk).eta!.value).toBe('> 7 доб');
+    // House 193 W → 250 W from the batteries with the inverter's own use.
+    expect(panelModel(ctx({ reading: { ...r, upsLoadPowerW: 193 } }), cfg, uk).eta!.value).toBe('≈ 3 доб 12 год');
+    expect(panelModel(ctx({ reading: { ...r, upsLoadPowerW: 193 } }), cfg, uk).eta!.sub).toBe('(84 год)');
     // Charging or a real discharge keeps the old wording.
     expect(panelModel(ctx({ reading: { ...r, batteryPowerW: 4100 } }), cfg, uk).flow!.label).toBe('Заряд');
     expect(panelModel(ctx({ reading: { ...r, batteryPowerW: -800 } }), cfg, uk).flow!.label).toBe('Розряд');

@@ -20,6 +20,32 @@ export const runtimeColor = (hours: number) => RUNTIME_STEPS.find(([from]) => ho
 
 /** Battery power this small (either way) counts as idle: full batteries just trickle. */
 export const BATTERY_IDLE_W = 100;
+/**
+ * With the grid on, full batteries keep giving the inverter its own ~40–60 W, and a load step briefly
+ * takes ~100 W more before the grid catches up: that much discharge still means "batteries wait".
+ */
+export const GRID_STANDBY_DISCHARGE_W = 150;
+
+/** Batteries wait (neither charging nor really discharging) while the grid is on. */
+export const batteriesIdleOnGrid = (batteryPowerW: number) => batteryPowerW < BATTERY_IDLE_W && batteryPowerW > -GRID_STANDBY_DISCHARGE_W;
+
+/**
+ * What the batteries would give for this house load: the inverter's own ~55 W plus ~1 % conversion.
+ * Fitted on 350 readings from the owner's outages (median overhead 53 W, ~95 W above 2 kW).
+ */
+export const INVERTER_OWN_W = 55;
+export const INVERTER_LOSS = 0.01;
+export const batteryDrainW = (houseW: number) => Math.round(houseW * (1 + INVERTER_LOSS) + INVERTER_OWN_W);
+
+/**
+ * For runtime: really discharging, the batteries' own figure (house + inverter, less any sun); otherwise (waiting
+ * on the grid, or a frame from just before the outage) what they'd give the house.
+ */
+export function runtimeDrainW(r: Pick<Reading, 'batteryPowerW' | 'upsLoadPowerW' | 'loadPowerW'>): number | null {
+  if (r.batteryPowerW !== null && r.batteryPowerW <= -BATTERY_IDLE_W) return -r.batteryPowerW;
+  const house = r.upsLoadPowerW ?? r.loadPowerW;
+  return house !== null ? batteryDrainW(house) : null;
+}
 
 export const DEFAULT_RATED_W = 10_000; // SUN-10K; used when the inverter doesn't report its rating
 export const LOAD_HYSTERESIS_W = 500;
@@ -45,30 +71,85 @@ export function gridChargeW(gridChargeA: number, batteryV: number): number {
   return Math.round(gridChargeA * batteryV);
 }
 
+/** Where the house load came from beyond the bar's source (part of it from the batteries or the sun). */
+export interface Topped {
+  w: number;
+  from: 'batteries' | 'sun';
+}
+
 export interface GridLoad {
-  totalW: number;
-  homeW: number;
-  batteryW: number;
+  totalW: number; // grid draw
+  homeW: number; // what the house takes, as measured (the "Home" tile)
+  batteryW: number; // into the batteries, DC, as the battery reports it (the "Charge" figure)
+  inverterW: number; // the rest of the grid draw: AC→DC conversion and the inverter's own use
+  // Bar shares of totalW (they add up to it): the house can take more than the grid gives.
+  bar: { homeW: number; batteryW: number; inverterW: number };
+  topped: Topped | null;
 }
 
 export type LoadZone = 'green' | 'yellow' | 'orange' | 'red';
 
+/** The house took noticeably more than the bar's source gave: from where. */
+function topped(extraW: number, dischargeW: number, pvW: number): Topped | null {
+  if (extraW < MIN_SHOWN_W) return null;
+  if (dischargeW >= MIN_SHOWN_W) return { w: extraW, from: 'batteries' };
+  if (pvW >= MIN_SHOWN_W) return { w: extraW, from: 'sun' };
+  return null; // two fields read a moment apart, not a real source
+}
+
 /**
- * Grid draw split into the house and charging. The house is what the inverter measures going to it (UPS-Load),
- * so it matches the "Home" tile; charging is the rest of the grid draw, i.e. its AC side with conversion losses
- * (~4.5 %: 4.13 kW into the batteries takes ~4.31 kW from the grid). Without a measured house load: grid minus
- * the battery's DC power. With sun the split is approximate.
+ * Grid draw = house + charging (DC, the same figure as "Charge") + the inverter: AC→DC conversion and its own
+ * use (~4.5 %: 4.17 kW into the batteries takes ~4.35 kW from the grid). Each part is what Deye measures, so the
+ * legend matches the "Home" tile and the "Charge" figure; the inverter is what's left. Without a measured house
+ * load the house is grid minus charging (the inverter's share is then inside it).
  */
-export function gridLoad(r: Pick<Reading, 'gridPowerW' | 'batteryPowerW'> & Partial<Pick<Reading, 'upsLoadPowerW' | 'loadPowerW'>>): GridLoad | null {
+export function gridLoad(
+  r: Pick<Reading, 'gridPowerW' | 'batteryPowerW'> & Partial<Pick<Reading, 'upsLoadPowerW' | 'loadPowerW' | 'pvPowerW'>>,
+): GridLoad | null {
   const total = r.gridPowerW;
   if (total === null || total < MIN_SHOWN_W) return null;
-  const house = r.upsLoadPowerW ?? r.loadPowerW ?? null;
-  if (house !== null) {
-    const homeW = Math.min(Math.max(house, 0), total);
-    return { totalW: total, homeW, batteryW: total - homeW };
-  }
-  const batteryW = Math.min(Math.max(r.batteryPowerW ?? 0, 0), total);
-  return { totalW: total, homeW: total - batteryW, batteryW };
+  const bat = r.batteryPowerW ?? 0;
+  const charge = Math.max(bat, 0);
+  const measured = r.upsLoadPowerW ?? r.loadPowerW ?? null;
+  const house = measured !== null ? Math.max(measured, 0) : Math.max(total - charge, 0);
+  const homeBar = Math.min(house, total);
+  const batteryBar = Math.min(charge, total - homeBar);
+  const inverterBar = total - homeBar - batteryBar;
+  return {
+    totalW: total,
+    homeW: house,
+    batteryW: charge,
+    inverterW: inverterBar,
+    bar: { homeW: homeBar, batteryW: batteryBar, inverterW: inverterBar },
+    topped: topped(house - total, Math.max(-bat, 0), Math.max(r.pvPowerW ?? 0, 0)),
+  };
+}
+
+export interface BatteryLoad {
+  totalW: number; // out of the batteries, DC (the "Discharge" figure)
+  homeW: number;
+  inverterW: number; // the inverter's own use and conversion
+  bar: { homeW: number; inverterW: number };
+  topped: Topped | null; // the sun covering part of the house
+}
+
+/**
+ * During an outage: what the batteries give = house + the inverter (its own ~45 W and conversion). With the
+ * battery power unknown, the house alone.
+ */
+export function batteryLoad(r: Pick<Reading, 'batteryPowerW'> & Partial<Pick<Reading, 'upsLoadPowerW' | 'loadPowerW' | 'pvPowerW'>>): BatteryLoad | null {
+  const measured = r.upsLoadPowerW ?? r.loadPowerW ?? null;
+  if (measured === null) return null;
+  const house = Math.max(measured, 0);
+  const total = r.batteryPowerW === null ? house : Math.max(-r.batteryPowerW, 0);
+  const homeBar = Math.min(house, total);
+  return {
+    totalW: total,
+    homeW: house,
+    inverterW: total - homeBar,
+    bar: { homeW: homeBar, inverterW: total - homeBar },
+    topped: topped(house - total, 0, r.batteryPowerW === null ? 0 : Math.max(r.pvPowerW ?? 0, 0)),
+  };
 }
 
 export function loadZone(w: number, redFromW: number): LoadZone {

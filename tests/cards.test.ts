@@ -27,11 +27,13 @@ describe('load bar', () => {
     const { svgPanel } = await import('../src/render/cards.js');
     const svg = svgPanel({
       status: { kind: 'on', label: 'on' }, time: null, stale: null, soc: 90, socKwh: null, flow: null, eta: null, schedule: null, tiles: [], caption: '',
-      load: { label: 'З мережі', value: '5.53', max: '10 кВт', zone: 'yellow', scale: { yellow: 0.5, orange: 0.65, red: 0.8 }, homeFrac: 0.136, batteryFrac: 0.417,
-        legend: { home: { label: 'Будинок', kw: '1.36' }, battery: { label: 'Батареї', kw: '4.17' }, limit: 'ліміт заряду з мережі 80 А ≈ 4.35 кВт' } },
+      load: { label: 'З мережі', value: '5.66', max: '10 кВт', zone: 'yellow', scale: { yellow: 0.5, orange: 0.65, red: 0.8 },
+        segments: [{ kind: 'home', frac: 0.136 }, { kind: 'charge', frac: 0.417 }, { kind: 'inverter', frac: 0.018 }],
+        legend: { items: [{ kind: 'home', label: 'Будинок', kw: '1.36' }, { kind: 'charge', label: 'Батареї', kw: '4.17' }, { kind: 'inverter', label: 'Інвертор', kw: '0.18' }], limit: 'ліміт заряду з мережі 80 А ≈ 4.35 кВт' } },
     });
     expect(svg).toContain('#38bdf8'); // home
     expect(svg).toContain('#e879f9'); // batteries
+    expect(svg).toMatch(/fill="#94a3b8"[^>]*>0\.18<\/tspan>/); // inverter
     expect(svg).toMatch(/<clipPath id="loadBar"><rect [^>]*height="18" rx="9"/);
     expect(svg).toMatch(/<clipPath id="zoneStrip"><rect [^>]*rx="2"/);
     expect(svg).toMatch(/fill="#38bdf8"[^>]*>1\.36<\/tspan>/);

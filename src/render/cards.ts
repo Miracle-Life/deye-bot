@@ -113,6 +113,9 @@ const ZONE: Record<LoadZone, string> = { green: C.green, yellow: C.amber, orange
 const LOAD_H = 140; // bar, zone strip, legend, then the limit line
 const HOME_C = '#38bdf8'; // load bar: what the house takes
 const CHARGE_C = '#e879f9'; // load bar: what charging takes
+const INVERTER_C = '#94a3b8'; // load bar: the inverter's own use and conversion
+const SEGMENT_C: Record<LoadBlock['segments'][number]['kind'], string> = { home: HOME_C, charge: CHARGE_C, inverter: INVERTER_C };
+const LEGEND_GAP = 20;
 const BAR_H = 18;
 
 function loadBlock(y: number, l: LoadBlock): string {
@@ -121,8 +124,6 @@ function loadBlock(y: number, l: LoadBlock): string {
   const bx = x + 16;
   const bw = w - 32;
   const right = x + w - 16;
-  const homeW = bw * l.homeFrac;
-  const batW = bw * l.batteryFrac;
   const { yellow, orange, red } = l.scale;
   const bands: [number, number, string][] = [
     [0, yellow, C.greenDeep],
@@ -135,12 +136,33 @@ function loadBlock(y: number, l: LoadBlock): string {
     .filter(([a, b]) => b > a)
     .map(([a, b, c]) => `<rect x="${(bx + bw * a).toFixed(1)}" y="${sy}" width="${(bw * (b - a)).toFixed(1)}" height="4" fill="${c}" fill-opacity="0.7"/>`)
     .join('');
-  // Legend: coloured swatch, grey label, value in the segment's colour.
+  // Legend: coloured swatch, grey label, value in the segment's colour; a note is grey text without a swatch.
   const ly = sy + 26;
-  const item = (lx: number, color: string, it: { label: string; kw: string }) =>
-    `<rect x="${lx}" y="${ly - 10}" width="11" height="11" rx="3" fill="${color}"/>
-<text x="${lx + 17}" y="${ly}" font-size="13" font-weight="500" fill="${C.muted}">${esc(it.label)} <tspan font-weight="700" fill="${color}">${esc(it.kw)}</tspan></text>`;
-  const second = bx + 17 + textW(`${l.legend.home.label} ${l.legend.home.kw}`, 13, 600) + 22;
+  const texts = l.legend.items.map((it) => (it.kind === 'note' ? it.label : `${it.label} ${it.kw}`));
+  // A note is all medium-weight text, narrower than the bold-number estimate.
+  const widths = l.legend.items.map((it, i) => (it.kind === 'note' ? texts[i]!.length * 13 * 0.5 : 17 + textW(texts[i]!, 13, 600)));
+  const natural = widths.reduce((a, b) => a + b, 0) + LEGEND_GAP * (widths.length - 1);
+  const k = natural > 0 ? Math.min(1, bw / natural) : 1; // shrink the whole row rather than overflow
+  const size = Math.floor(13 * k * 10) / 10;
+  let lx = bx;
+  const legend = l.legend.items
+    .map((it, i) => {
+      const at = lx;
+      lx += (widths[i]! + LEGEND_GAP) * k;
+      if (it.kind === 'note') return `<text x="${at.toFixed(1)}" y="${ly}" font-size="${size}" font-weight="500" fill="${C.muted}">${esc(texts[i]!)}</text>`;
+      const color = SEGMENT_C[it.kind];
+      return `<rect x="${at.toFixed(1)}" y="${ly - 10}" width="11" height="11" rx="3" fill="${color}"/>
+<text x="${(at + 17 * k).toFixed(1)}" y="${ly}" font-size="${size}" font-weight="500" fill="${C.muted}">${esc(it.label)} <tspan font-weight="700" fill="${color}">${esc(it.kw)}</tspan></text>`;
+    })
+    .join('\n');
+  let sx = bx;
+  const bar = l.segments
+    .map((sg) => {
+      const at = sx;
+      sx += bw * sg.frac;
+      return sg.frac > 0 ? `<rect x="${at.toFixed(1)}" y="${y + 44}" width="${(bw * sg.frac).toFixed(1)}" height="${BAR_H}" fill="${SEGMENT_C[sg.kind]}"/>` : '';
+    })
+    .join('');
   const limitY = ly + 30;
   return `<rect x="${x}" y="${y}" width="${w}" height="${LOAD_H}" rx="16" fill="${C.tile}" stroke="${C.tileStroke}"/>
 ${icon('grid', bx, y + 13, ZONE[l.zone])}
@@ -149,13 +171,11 @@ ${icon('grid', bx, y + 13, ZONE[l.zone])}
 <clipPath id="loadBar"><rect x="${bx}" y="${y + 44}" width="${bw}" height="${BAR_H}" rx="${BAR_H / 2}"/></clipPath>
 <g clip-path="url(#loadBar)">
   <rect x="${bx}" y="${y + 44}" width="${bw}" height="${BAR_H}" fill="rgba(255,255,255,0.08)"/>
-  <rect x="${bx}" y="${y + 44}" width="${homeW.toFixed(1)}" height="${BAR_H}" fill="${HOME_C}"/>
-  <rect x="${(bx + homeW).toFixed(1)}" y="${y + 44}" width="${batW.toFixed(1)}" height="${BAR_H}" fill="${CHARGE_C}"/>
+  ${bar}
 </g>
 <clipPath id="zoneStrip"><rect x="${bx}" y="${sy}" width="${bw}" height="4" rx="2"/></clipPath>
 <g clip-path="url(#zoneStrip)">${scale}</g>
-${item(bx, HOME_C, l.legend.home)}
-${l.legend.battery ? item(second, CHARGE_C, l.legend.battery) : ''}
+${legend}
 ${
   l.legend.limit
     ? `<line x1="${bx}" y1="${limitY - 18}" x2="${right}" y2="${limitY - 18}" stroke="rgba(255,255,255,0.06)"/>

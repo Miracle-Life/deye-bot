@@ -39,7 +39,7 @@ save(
     panelModel(
       {
         ...ctx,
-        reading: { ...base, soc: 80, batteryPowerW: 4000, upsLoadPowerW: 1100, gridPowerW: 5100, gridVoltages: [230, 230, 230] },
+        reading: { ...base, soc: 80, batteryPowerW: 4000, upsLoadPowerW: 1100, gridPowerW: 5280, gridVoltages: [230, 230, 230] },
         schedule: { state: { kind: 'next', start: at('2026-11-04T22:00'), end: at('2026-11-05T06:00') }, stale: false, fetchedAt: now },
       } as never,
       cfg,
@@ -57,7 +57,7 @@ save(
         ...ctx,
         grid: { state: 'off', missingPhases: ['L1', 'L2', 'L3'], ambiguous: false },
         outageStartTs: now - 2 * H - 17 * MIN,
-        reading: { ...base, soc: 64, batteryVoltage: 51.6, batteryPowerW: -1400, upsLoadPowerW: 1400, gridPowerW: 0, gridVoltages: [0, 0, 0] },
+        reading: { ...base, soc: 64, batteryVoltage: 51.6, batteryPowerW: -1460, upsLoadPowerW: 1400, gridPowerW: 0, gridVoltages: [0, 0, 0] },
         schedule: { state: { kind: 'off-until', until: at('2026-11-05T00:00'), endsAtDayEdge: false }, stale: false, fetchedAt: now },
       } as never,
       cfg,

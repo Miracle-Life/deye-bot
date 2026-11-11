@@ -9,7 +9,27 @@ import type { Interval, Reading } from '../deye/types.js';
 import { runtimeHours, timeToFullMin } from '../domain/forecast.js';
 import type { EnergyDay, MonthSummary, Tariff } from '../domain/energy.js';
 import type { Segment, Summary } from '../domain/stats.js';
-import { batteryBands, batteryScaleW, batteryZone, GRID_ORANGE_W, GRID_YELLOW_W, gridChargeW, gridLoad, gridScaleW, loadZone, batteryV, BATTERY_IDLE_W, runtimeColor, type LoadZone } from '../domain/load.js';
+import {
+  batteriesIdleOnGrid,
+  batteryBands,
+  batteryLoad,
+  batteryScaleW,
+  batteryZone,
+  GRID_ORANGE_W,
+  GRID_YELLOW_W,
+  gridChargeW,
+  gridLoad,
+  gridScaleW,
+  loadZone,
+  batteryV,
+  BATTERY_IDLE_W,
+  MIN_SHOWN_W,
+  batteryDrainW,
+  runtimeColor,
+  runtimeDrainW,
+  type LoadZone,
+  type Topped,
+} from '../domain/load.js';
 
 export type Tone = 'green' | 'red' | 'amber' | 'plain' | 'muted';
 export type Icon = 'home' | 'sun' | 'grid' | 'battery' | 'moon' | 'calendar';
@@ -42,9 +62,16 @@ export interface LoadBlock {
   max: string;
   zone: LoadZone;
   scale: { yellow: number; orange: number; red: number }; // bar fractions where each zone starts
-  homeFrac: number; // of the bar's full scale
-  batteryFrac: number;
-  legend: { home: { label: string; kw: string }; battery: { label: string; kw: string } | null; limit: string | null };
+  segments: { kind: SegmentKind; frac: number }[]; // of the bar's full scale, left to right
+  legend: { items: LegendItem[]; limit: string | null };
+}
+
+export type SegmentKind = 'home' | 'charge' | 'inverter';
+/** `note`: grey text in `label`, no swatch: "0.07 of it from batteries" when the house took more than the bar's source gave. */
+export interface LegendItem {
+  kind: SegmentKind | 'note';
+  label: string;
+  kw: string;
 }
 
 export interface ScheduleTile {
@@ -98,46 +125,74 @@ const cap = (r: Reading, cfg: Config) => r.batteryCapacityKwh ?? cfg.batteryCapa
 
 const frac = (w: number, of: number) => (of > 0 ? Math.round((Math.min(Math.max(w, 0), of) / of) * 10_000) / 10_000 : 0);
 
+function toppedItem(tp: Topped | null, t: Dict): LegendItem[] {
+  return tp ? [{ kind: 'note', label: tp.from === 'sun' ? t.card.toppedSun(fmtKw(tp.w)) : t.card.toppedBatteries(fmtKw(tp.w)), kw: '' }] : [];
+}
+
+/** The inverter's share is listed once it's worth a glance; the bar always draws it. */
+const inverterItem = (w: number, t: Dict): LegendItem[] => (w >= MIN_SHOWN_W ? [{ kind: 'inverter', label: t.card.loadInverter, kw: fmtKw(w) }] : []);
+
 function gridBlock(r: Reading, cfg: Config, t: Dict): LoadBlock | null {
   const l = gridLoad(r);
   if (!l) return null;
   const scaleW = gridScaleW(r.ratedPowerW);
   const redW = cfg.gridLoadMaxKw * 1000;
-  const homeFrac = frac(l.homeW, scaleW);
   const red = frac(redW, scaleW);
+  const charging = l.batteryW >= BATTERY_IDLE_W;
   return {
     label: t.card.fromGrid,
     value: fmtKw(l.totalW),
     max: `${fmtKwMax(scaleW)} ${t.units.kw}`,
     zone: loadZone(l.totalW, redW),
     scale: { yellow: Math.min(frac(GRID_YELLOW_W, scaleW), red), orange: Math.min(frac(GRID_ORANGE_W, scaleW), red), red },
-    homeFrac,
-    batteryFrac: Math.min(frac(l.batteryW, scaleW), 1 - homeFrac),
+    segments: segments([
+      ['home', l.bar.homeW],
+      ['charge', l.bar.batteryW],
+      ['inverter', l.bar.inverterW],
+    ], scaleW),
     legend: {
-      home: { label: t.card.loadHome, kw: fmtKw(l.homeW) },
-      battery: { label: t.card.loadBatteries, kw: fmtKw(l.batteryW) },
+      items: [
+        { kind: 'home', label: t.card.loadHome, kw: fmtKw(l.homeW) },
+        ...toppedItem(l.topped, t),
+        ...(charging ? [{ kind: 'charge' as const, label: t.card.loadBatteries, kw: fmtKw(l.batteryW) }] : []),
+        ...inverterItem(l.inverterW, t),
+      ],
       limit: t.card.chargeLimit(cfg.gridChargeA, fmtKw(gridChargeW(cfg.gridChargeA, batteryV(r.batteryVoltage)))),
     },
   };
 }
 
-/** During an outage: house draw against what the inverter can give from the batteries. */
+/** Bar segments in order, each clipped to what's left of the scale. */
+function segments(parts: [SegmentKind, number][], scaleW: number): LoadBlock['segments'] {
+  let used = 0;
+  return parts.map(([kind, w]) => {
+    const f = Math.min(frac(w, scaleW), Math.max(0, 1 - used));
+    used += f;
+    return { kind, frac: f };
+  });
+}
+
+/**
+ * During an outage: what the batteries give (the "Discharge" figure) = house + inverter, against what the inverter
+ * can give from them. The zone follows the house load, like the overload alert.
+ */
 function batteryBlock(r: Reading, dischargeA: number | null, cfg: Config, t: Dict): LoadBlock | null {
-  const w = load(r);
-  if (w === null) return null;
+  const l = batteryLoad(r);
+  if (!l) return null;
   const scaleW = batteryScaleW(dischargeA, batteryV(r.batteryVoltage), r.ratedPowerW);
   const redW = cfg.batteryLoadMaxKw * 1000;
   return {
     label: t.card.fromBatteries,
-    value: fmtKw(w),
+    value: fmtKw(l.totalW),
     max: `${fmtKwMax(scaleW)} ${t.units.kw}`,
-    zone: batteryZone(w, scaleW, redW),
+    zone: batteryZone(l.homeW, scaleW, redW),
     scale: batteryBands(scaleW, redW),
-    homeFrac: frac(w, scaleW),
-    batteryFrac: 0,
+    segments: segments([
+      ['home', l.bar.homeW],
+      ['inverter', l.bar.inverterW],
+    ], scaleW),
     legend: {
-      home: { label: t.card.loadHome, kw: fmtKw(w) },
-      battery: null,
+      items: [{ kind: 'home', label: t.card.loadHome, kw: fmtKw(l.homeW) }, ...toppedItem(l.topped, t), ...inverterItem(l.inverterW, t)],
       limit: t.card.dischargeLimit(dischargeA, fmtKwMax(scaleW), r.ratedPowerW === null ? null : fmtKwMax(r.ratedPowerW)),
     },
   };
@@ -257,8 +312,11 @@ export function panelModel(c: PanelCtx, cfg: Config, t: Dict): PanelModel {
   if (r?.batteryPowerW != null) {
     const p = r.batteryPowerW;
     const house = load(r);
-    const hours = r.soc !== null && house !== null ? runtimeHours(r.soc, house, cap(r, cfg), cfg.batteryReservePct) : null;
-    if (g === 'on' && Math.abs(p) < BATTERY_IDLE_W && house !== null && r.soc !== null) {
+    const idle = g === 'on' && batteriesIdleOnGrid(p);
+    // Waiting: what they'd give the house; discharging: their own figure.
+    const drain = idle ? (house !== null ? batteryDrainW(house) : null) : runtimeDrainW(r);
+    const hours = r.soc !== null && drain !== null ? runtimeHours(r.soc, drain, cap(r, cfg), cfg.batteryReservePct) : null;
+    if (idle && house !== null && r.soc !== null) {
       // Batteries just wait: what the house takes from the grid, and how long they'd last at that load.
       flow = { label: k.fromGridNow, value: fmtPower(house, t) };
       if (hours !== null) {

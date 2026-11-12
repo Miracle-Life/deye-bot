@@ -142,8 +142,40 @@ describe('panelModel', () => {
     expect(panelModel(ctx({ reading: { ...r, upsLoadPowerW: 193 } }), cfg, uk).eta!.value).toBe('≈ 3 доб 12 год');
     expect(panelModel(ctx({ reading: { ...r, upsLoadPowerW: 193 } }), cfg, uk).eta!.sub).toBe('(84 год)');
     // Charging or a real discharge keeps the old wording.
-    expect(panelModel(ctx({ reading: { ...r, batteryPowerW: 4100 } }), cfg, uk).flow!.label).toBe('Заряд');
+    expect(panelModel(ctx({ reading: { ...r, soc: 90, batteryPowerW: 4100 } }), cfg, uk).flow!.label).toBe('Заряд');
     expect(panelModel(ctx({ reading: { ...r, batteryPowerW: -800 } }), cfg, uk).flow!.label).toBe('Розряд');
+  });
+
+  it('the owner\'s 02:33 top-up: full batteries recharge a few minutes, the card keeps "full" and the runtime', () => {
+    // BMS says 100 % all along; the inverter tops up after the voltage sags to ~53.2 V on its own 40 W.
+    const r = { ...base, ts: now - MIN, soc: 100, batteryPowerW: 1707, upsLoadPowerW: 1397, gridPowerW: 3194, batteryVoltage: 54.19, batteryCapacityKwh: 23.552, gridVoltages: [238, 238, 238] };
+    const uk = dicts.uk;
+    const m = panelModel(ctx({ reading: r }), cfg, uk);
+    expect(m.flow).toEqual({ label: 'Підзарядка', value: '+1.71 кВт' });
+    expect(m.eta).toMatchObject({ label: 'Батареї повні · при 1.40 кВт вистачить на', tone: 'green' });
+    // The same runtime as a moment later, when they wait again at this house load.
+    const idle = panelModel(ctx({ reading: { ...r, batteryPowerW: -41, gridPowerW: 1397 } }), cfg, uk);
+    expect(m.eta).toEqual(idle.eta);
+    expect(m.caption).toBe('🟢 <b>Світло є</b> · батареї підзаряджаються');
+    // The bar still shows where the grid goes.
+    expect(m.load!.legend.items.map((i) => i.label)).toEqual(['Будинок', 'Батареї', 'Інвертор']);
+    // Below 99 % it is an ordinary charge with time to full.
+    const charge = panelModel(ctx({ reading: { ...r, soc: 97 } }), cfg, uk);
+    expect(charge.flow!.label).toBe('Заряд');
+    expect(charge.eta!.label).toBe('До 100% ≈');
+    expect(charge.caption).toBe('🟢 <b>Світло є</b> · батареї заряджаються');
+  });
+
+  it('battery tile: what the batteries take or give, like the Deye app; voltage and temperature on the side', () => {
+    const r = { ...base, ts: now - MIN, soc: 100, batteryPowerW: -40, upsLoadPowerW: 1310, gridPowerW: 1310, batteryVoltage: 54.4, batteryTempC: 26, gridVoltages: [240, 240, 240] };
+    const tile = (x: object) => panelModel(ctx({ reading: { ...r, ...x } }), cfg, dicts.uk).tiles.find((t) => t.icon === 'battery');
+    // Waiting on the grid: the inverter's own 40 W still shows.
+    expect(tile({})).toEqual({ icon: 'battery', label: 'Батарея', value: '−40', unit: 'Вт', aside: '54.4 В · 26°C' });
+    expect(tile({ batteryPowerW: 1707 })).toMatchObject({ value: '+1.71', unit: 'кВт' });
+    expect(tile({ batteryPowerW: -1421 })).toMatchObject({ value: '−1.42', unit: 'кВт' });
+    expect(tile({ batteryPowerW: 0 })).toMatchObject({ value: '0', unit: 'Вт' });
+    // Unknown power, 0 V (Deye's "unknown") and no temperature.
+    expect(tile({ batteryPowerW: null, batteryVoltage: 0, batteryTempC: null })).toEqual({ icon: 'battery', label: 'Батарея', value: '—', unit: '' });
   });
 
   it('caption says how long the power was off during the first hour after it is back', () => {

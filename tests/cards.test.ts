@@ -39,3 +39,15 @@ describe('load bar', () => {
     expect(svg).toMatch(/fill="#38bdf8"[^>]*>1\.36<\/tspan>/);
   });
 });
+
+describe('tiles', () => {
+  it('a side note sits right-aligned in the label row', async () => {
+    const { svgPanel } = await import('../src/render/cards.js');
+    const svg = svgPanel({
+      status: { kind: 'on', label: 'on' }, time: null, stale: null, soc: 100, socKwh: null, flow: null, eta: null, schedule: null, load: null, caption: '',
+      tiles: [{ icon: 'battery', label: 'Батарея', value: '−40', unit: 'Вт', aside: '54.4 В · 26°C' }],
+    });
+    expect(svg).toMatch(/text-anchor="end"[^>]*>54\.4 В · 26°C<\/text>/);
+    expect(svg).toContain('>−40</tspan>');
+  });
+});

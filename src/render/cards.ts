@@ -106,7 +106,7 @@ function tile(x: number, y: number, w: number, h: number, t: PanelModel['tiles']
   return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="16" fill="${C.tile}" stroke="${C.tileStroke}"/>
 ${icon(t.icon, x + 16, y + 15, iconColor)}
 <text x="${x + 42}" y="${y + 29}" font-size="14" font-weight="500" fill="${C.muted}">${esc(t.label)}</text>
-<text x="${x + 16}" y="${y + 66}"><tspan font-size="26" font-weight="700" fill="${valueColor}">${esc(t.value)}</tspan><tspan dx="6" font-size="14" font-weight="500" fill="${C.muted}">${esc(t.unit)}</tspan></text>`;
+${t.aside ? `<text x="${x + w - 16}" y="${y + 29}" text-anchor="end" font-size="13" font-weight="500" fill="${C.muted}">${esc(t.aside)}</text>\n` : ''}<text x="${x + 16}" y="${y + 66}"><tspan font-size="26" font-weight="700" fill="${valueColor}">${esc(t.value)}</tspan><tspan dx="6" font-size="14" font-weight="500" fill="${C.muted}">${esc(t.unit)}</tspan></text>`;
 }
 
 const ZONE: Record<LoadZone, string> = { green: C.green, yellow: C.amber, orange: C.orange, red: C.red };

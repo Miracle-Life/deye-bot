@@ -5,7 +5,7 @@ import type { BatteryLimits, Interval, Reading } from '../deye/types.js';
 import type { DetectorEvent } from '../domain/detector.js';
 import { runtimeHours, timeToFullMin } from '../domain/forecast.js';
 import type { GridSample } from '../domain/grid.js';
-import { batteryLoad, batteryScaleW, batteryV, gridLoad, MIN_SHOWN_W, runtimeDrainW } from '../domain/load.js';
+import { batteryLoad, batteryScaleW, batteryV, gridLoad, MIN_SHOWN_W, runtimeDrainW, toppingUp } from '../domain/load.js';
 import type { Summary } from '../domain/stats.js';
 import type { Dict } from '../i18n/index.js';
 import type { TileState } from '../schedule/logic.js';
@@ -183,8 +183,8 @@ function header(c: PanelCtx, cfg: Config, t: Dict): string {
     lines.push(`${p.powerOff} · ${note || p.homeOnBatteries}`);
     if (c.outageStartTs !== null) lines.push(`<i>${p.offSince(fmtDuration(c.nowMs - c.outageStartTs, t), time(c.outageStartTs, z))}</i>`);
   } else if (c.grid?.state === 'on') {
-    const charging = (c.reading?.batteryPowerW ?? 0) > 0;
-    lines.push(`${p.powerOn}${charging ? p.batteriesCharging : ''}`);
+    const w = c.reading?.batteryPowerW ?? 0;
+    lines.push(`${p.powerOn}${w > 0 ? (toppingUp(c.reading!.soc, w) ? p.batteriesToppingUp : p.batteriesCharging) : ''}`);
     if (c.lastOnTs !== null) lines.push(`<i>${p.backAt(time(c.lastOnTs, z))}</i>`);
   } else {
     lines.push(p.gridUnknown);
@@ -204,6 +204,8 @@ function batteryBlock(r: Reading, cfg: Config, nowMs: number, t: Dict): string[]
     const drain = runtimeDrainW(r);
     const h = r.soc !== null && drain !== null ? runtimeHours(r.soc, drain, capacity(r, cfg), cfg.batteryReservePct) : null;
     out.push(`${p.discharge(b(kw(w, t)))}${h !== null ? p.runtimeBold(b(fmtApprox(h * H, t))) : ''}`);
+  } else if (w !== null && toppingUp(r.soc, w)) {
+    out.push(p.topUp(b(`+${kw(w, t)}`)));
   } else if (w !== null && w > 0) {
     const min = r.soc !== null ? timeToFullMin(r.soc, w, capacity(r, cfg)) : null;
     const eta = min ? p.etaBold(b(fmtDuration(min * MIN, t)), time(nowMs + min * MIN, cfg.timezone)) : '';

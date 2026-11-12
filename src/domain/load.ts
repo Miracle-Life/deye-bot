@@ -30,6 +30,13 @@ export const GRID_STANDBY_DISCHARGE_W = 150;
 export const batteriesIdleOnGrid = (batteryPowerW: number) => batteryPowerW < BATTERY_IDLE_W && batteryPowerW > -GRID_STANDBY_DISCHARGE_W;
 
 /**
+ * Full batteries on the grid slowly give the inverter its ~40 W; once their voltage sags (~53.2 V on the owner's
+ * pack, every few hours) the inverter tops them up for a few minutes at ~1.7 kW while the BMS still says 100 %.
+ */
+export const TOP_UP_SOC = 99;
+export const toppingUp = (soc: number | null, batteryPowerW: number) => soc !== null && soc >= TOP_UP_SOC && batteryPowerW >= BATTERY_IDLE_W;
+
+/**
  * What the batteries would give for this house load: the inverter's own ~55 W plus ~1 % conversion.
  * Fitted on 350 readings from the owner's outages (median overhead 53 W, ~95 W above 2 kW).
  */

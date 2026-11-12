@@ -188,6 +188,15 @@ describe('renderPanel', () => {
     expect(text).toMatch(/хватит ≈ <b>\d+ ч/);
   });
 
+  it('full batteries topping up on the grid: "подзарядка", not a charge with no time to full', () => {
+    const now = at('2026-11-12T02:33');
+    const r = { ...reading(now - MIN, 100, 1707, 1397), gridPowerW: 3194, gridVoltages: [238, 238, 238] };
+    const text = renderPanel({ reading: r, grid: { state: 'on', missingPhases: [], ambiguous: false }, outageStartTs: null, lastOnTs: null, nowMs: now, staleAfterMs: 15 * MIN, limits: null }, cfg, ru);
+    expect(text).toContain('🟢 <b>Свет есть</b> · батареи подзаряжаются');
+    expect(text).toContain('↗️ Подзарядка <b>+1.71 кВт</b> · батареи полные');
+    expect(text).not.toContain('Заряд');
+  });
+
   it('panel shows grid draw while charging from the grid', () => {
     const now = at('2026-11-04T18:44');
     const r = { ...reading(now - MIN, 85, 4100, 2900), gridPowerW: 7000, gridVoltages: [222, 222, 222] };

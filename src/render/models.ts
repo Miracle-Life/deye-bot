@@ -11,6 +11,7 @@ import type { EnergyDay, MonthSummary, Tariff } from '../domain/energy.js';
 import type { Segment, Summary } from '../domain/stats.js';
 import {
   batteriesIdleOnGrid,
+  toppingUp,
   batteryBands,
   batteryLoad,
   batteryScaleW,
@@ -40,6 +41,7 @@ export interface Tile {
   value: string;
   unit: string;
   tone?: Tone;
+  aside?: string; // small grey text at the right of the label row: "54.2 В · 26°C"
 }
 
 export interface PanelModel {
@@ -313,17 +315,24 @@ export function panelModel(c: PanelCtx, cfg: Config, t: Dict): PanelModel {
     const p = r.batteryPowerW;
     const house = load(r);
     const idle = g === 'on' && batteriesIdleOnGrid(p);
-    // Waiting: what they'd give the house; discharging: their own figure.
-    const drain = idle ? (house !== null ? batteryDrainW(house) : null) : runtimeDrainW(r);
+    const topUp = g === 'on' && toppingUp(r.soc, p);
+    // Waiting or topping up: what they'd give the house; discharging: their own figure.
+    const drain = idle || topUp ? (house !== null ? batteryDrainW(house) : null) : runtimeDrainW(r);
     const hours = r.soc !== null && drain !== null ? runtimeHours(r.soc, drain, cap(r, cfg), cfg.batteryReservePct) : null;
+    const reserve = (soc: number, house: number): PanelModel['eta'] => {
+      if (hours === null) return null;
+      const label = soc >= 99 ? k.reserveFull(fmtPower(house, t)) : k.reserveAt(Math.round(soc), fmtPower(house, t));
+      const a = fmtApproxParts(hours * H, t);
+      return { label, value: a.main.startsWith('>') ? a.main : `≈ ${a.main}`, ...(a.hours ? { sub: a.hours } : {}), tone: 'green', color: runtimeColor(hours) };
+    };
     if (idle && house !== null && r.soc !== null) {
       // Batteries just wait: what the house takes from the grid, and how long they'd last at that load.
       flow = { label: k.fromGridNow, value: fmtPower(house, t) };
-      if (hours !== null) {
-        const label = r.soc >= 99 ? k.reserveFull(fmtPower(house, t)) : k.reserveAt(Math.round(r.soc), fmtPower(house, t));
-        const a = fmtApproxParts(hours * H, t);
-        eta = { label, value: a.main.startsWith('>') ? a.main : `≈ ${a.main}`, ...(a.hours ? { sub: a.hours } : {}), tone: 'green', color: runtimeColor(hours) };
-      }
+      eta = reserve(r.soc, house);
+    } else if (topUp) {
+      // A few minutes' top-up of full batteries: still full, so the same runtime as while they wait.
+      flow = { label: k.topUp, value: `+${fmtPower(p, t)}` };
+      if (house !== null) eta = reserve(r.soc!, house);
     } else if (p < 0) {
       flow = { label: k.discharge, value: fmtPower(p, t) };
       if (hours !== null) {
@@ -353,16 +362,23 @@ export function panelModel(c: PanelCtx, cfg: Config, t: Dict): PanelModel {
     } else {
       tiles.push({ icon: 'grid', label: k.grid, value: '?', unit: '' });
     }
-    const temp = r.batteryTempC !== null ? ` · ${Math.round(r.batteryTempC)}°C` : '';
-    tiles.push({ icon: 'battery', label: k.battery, value: r.batteryVoltage !== null ? r.batteryVoltage.toFixed(1) : '—', unit: `${t.units.v}${temp}` });
+    // Like the Deye app: what the batteries take or give, even the inverter's own ~40 W while they wait.
+    const bw = r.batteryPowerW;
+    const pw = split(bw, t);
+    const sign = bw === null || Math.round(bw) === 0 ? '' : bw > 0 ? '+' : '−';
+    const bv = r.batteryVoltage !== null && r.batteryVoltage > 0 ? `${r.batteryVoltage.toFixed(1)} ${t.units.v}` : null;
+    const temp = r.batteryTempC !== null ? `${Math.round(r.batteryTempC)}°C` : null;
+    const aside = [bv, temp].filter(Boolean).join(' · ');
+    tiles.push({ icon: 'battery', label: k.battery, value: `${sign}${pw.value}`, unit: pw.unit, ...(aside ? { aside } : {}) });
   }
 
   const charging = (r?.batteryPowerW ?? 0) > 0;
+  const chargingNote = r && toppingUp(r.soc, r.batteryPowerW ?? 0) ? t.panel.batteriesToppingUp : t.panel.batteriesCharging;
   let caption =
     g === 'off'
       ? `${t.panel.powerOff}${c.outageStartTs !== null ? k.captionOffSince(fmtTime(c.outageStartTs, z)) : ''}`
       : g === 'on'
-        ? `${t.panel.powerOn}${wasOff(c, t)}${charging ? t.panel.batteriesCharging : ''}`
+        ? `${t.panel.powerOn}${wasOff(c, t)}${charging ? chargingNote : ''}`
         : t.panel.gridUnknown;
   if (stale) caption += `\n⚠️ ${stale}`;
 

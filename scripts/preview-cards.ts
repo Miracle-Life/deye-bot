@@ -42,6 +42,8 @@ const panels: Record<string, object> = {
   // The owner's real frames: grid = house + charging + inverter; house beyond the grid; outage with the inverter's share.
   'grid-owner-charge': { ...ctx, reading: { ...base, soc: 93, batteryVoltage: 54.3, batteryPowerW: 4170, upsLoadPowerW: 1310, gridPowerW: 5660, gridVoltages: [236, 236, 236] } },
   'grid-topped': { ...ctx, reading: { ...base, soc: 100, batteryPowerW: -105, upsLoadPowerW: 908, gridPowerW: 834, gridVoltages: [230, 230, 230] } },
+  'grid-topup': { ...ctx, reading: { ...base, soc: 100, batteryVoltage: 54.19, batteryPowerW: 1707, upsLoadPowerW: 1397, gridPowerW: 3194, gridVoltages: [238, 238, 238] } },
+  'grid-standby-80': { ...ctx, reading: { ...base, soc: 100, batteryVoltage: 54.4, batteryPowerW: -80, upsLoadPowerW: 1320, gridPowerW: 1240, gridVoltages: [240, 240, 240] } },
   'grid-sun': { ...ctx, reading: { ...base, soc: 70, batteryPowerW: 900, upsLoadPowerW: 1500, gridPowerW: 1000, pvPowerW: 1600, gridVoltages: [230, 230, 230] } },
   'outage-real': { ...ctx, grid: off, outageStartTs: now - 2 * H, reading: { ...base, soc: 88, batteryVoltage: 52.82, batteryPowerW: -1421, upsLoadPowerW: 1352, gridPowerW: 0, gridVoltages: [0, 0, 0] } },
   'grid-idle-full': { ...ctx, reading: { ...base, soc: 100, batteryPowerW: -45, upsLoadPowerW: 1420, gridPowerW: 1420, gridVoltages: [234, 234, 234] } },

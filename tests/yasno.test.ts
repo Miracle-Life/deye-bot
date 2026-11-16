@@ -86,7 +86,33 @@ describe('YasnoClient', () => {
     const c = new YasnoClient(fetchFn);
     await c.planned('52.1');
     expect(await c.group(101, 2002)).toBe('52.1');
-    expect(urls[0]).toBe('https://app.yasno.ua/api/blackout-service/public/shutdowns/regions/25/dsos/902/planned-outages');
+    expect(urls[0]).toMatch(/^https:\/\/app\.yasno\.ua\/api\/blackout-service\/public\/shutdowns\/regions\/25\/dsos\/902\/planned-outages\?_=\d+$/);
     expect(urls[1]).toContain('/addresses/v2/group?regionId=25&dsoId=902&streetId=101&houseId=2002');
+  });
+
+  // YASNO's CDN kept serving a day-old planned-outages response to the bare URL (Nov 2026),
+  // while a URL with any extra query got the fresh one. Every poll must miss that cache.
+  it('asks for the schedule with a unique URL each time', async () => {
+    const urls: string[] = [];
+    const fetchFn = (async (u: string | URL | Request) => {
+      urls.push(String(u));
+      return new Response(JSON.stringify(fx('planned-outages')), { status: 200 });
+    }) as typeof fetch;
+    const c = new YasnoClient(fetchFn);
+    await c.planned('52.1');
+    await new Promise((r) => setTimeout(r, 2));
+    await c.planned('52.1');
+    expect(urls[0]).not.toBe(urls[1]);
+  });
+
+  // The admin is told about a format error only when its text changes: the cache-buster must stay out of it.
+  it('keeps the cache-buster out of error texts', async () => {
+    const fetchFn = (async () => new Response('<html>', { status: 200 })) as typeof fetch;
+    const c = new YasnoClient(fetchFn);
+    const first = await c.planned('52.1').catch((e: Error) => e.message);
+    await new Promise((r) => setTimeout(r, 2));
+    const second = await c.planned('52.1').catch((e: Error) => e.message);
+    expect(first).toBe('YASNO response: /regions/25/dsos/902/planned-outages: not JSON');
+    expect(second).toBe(first);
   });
 });

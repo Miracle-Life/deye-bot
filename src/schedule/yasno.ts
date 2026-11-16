@@ -95,13 +95,16 @@ export class YasnoClient {
   }
 
   async planned(group: string): Promise<Schedule> {
-    return parsePlanned(await this.get(`/regions/${REGION}/dsos/${DSO}/planned-outages`), group, Date.now());
+    // The CDN in front of YASNO can stick to a day-old copy of the bare URL (seen Nov 2026):
+    // a unique query always reaches the fresh schedule.
+    return parsePlanned(await this.get(`/regions/${REGION}/dsos/${DSO}/planned-outages?_=${Date.now()}`), group, Date.now());
   }
 
   private async get(path: string, params?: Record<string, string | number>): Promise<unknown> {
     const qs = params ? `?${new URLSearchParams({ regionId: String(REGION), dsoId: String(DSO), ...Object.fromEntries(Object.entries(params).map(([k, v]) => [k, String(v)])) })}` : '';
     const res = await this.fetchFn(BASE + path + qs, { signal: AbortSignal.timeout(TIMEOUT_MS) });
-    if (!res.ok) throw new Error(`YASNO ${path}: HTTP ${res.status}`);
-    return res.json().catch(() => fail(`${path}: not JSON`));
+    const name = path.split('?')[0]; // no cache-buster: the same failure must read the same every time
+    if (!res.ok) throw new Error(`YASNO ${name}: HTTP ${res.status}`);
+    return res.json().catch(() => fail(`${name}: not JSON`));
   }
 }

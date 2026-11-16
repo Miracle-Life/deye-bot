@@ -1,5 +1,5 @@
 import { DateTime } from 'luxon';
-import { Bot, GrammyError, InlineKeyboard, InputFile, type Context } from 'grammy';
+import { Bot, GrammyError, HttpError, InlineKeyboard, InputFile, type Context } from 'grammy';
 import type { Config } from '../config.js';
 import type { BatteryLimits, Interval } from '../deye/types.js';
 import { buildTimeline, dayRange, dischargedKwh, minSoc, monthRange, summarize, weekRange, type Summary } from '../domain/stats.js';
@@ -385,6 +385,8 @@ export function createBot(cfg: Config, repo: Repo, poller: Poller, ops: BotOps):
         if (msgId) track(chatId, msgId, !!card.live, lang);
         return;
       }
+      // Telegram unreachable for a moment: the next tap or live refresh redraws it, nothing to report.
+      if (e instanceof HttpError) return void log.warn('card edit failed', errInfo(e));
       if (!(e instanceof GrammyError)) throw e;
       if (e.error_code === 429) return void log.warn('card edit rate-limited', errInfo(e)); // a new photo would only duplicate
       if (e.error_code !== 400) throw e;
